@@ -1,0 +1,54 @@
+# Task API replicas share MySQL; each gets an isolated persistent workspace.
+# Source reflection/integration runs on the host Git checkout, not this runtime image.
+x-agent-environment: &agent-environment
+  EVOMESH_DATABASE_URL: mysql+pymysql://evomesh:${MYSQL_PASSWORD:?set MYSQL_PASSWORD}@mysql/evomesh?charset=utf8mb4
+  EVOMESH_PROJECT: ${EVOMESH_PROJECT:-personal}
+  EVOMESH_MODEL: ${EVOMESH_MODEL:?set EVOMESH_MODEL}
+  EVOMESH_BASE_URL: ${EVOMESH_BASE_URL:?set EVOMESH_BASE_URL}
+  EVOMESH_API_KEY: ${EVOMESH_API_KEY:-}
+  EVOMESH_SERVER_TOKEN: ${EVOMESH_SERVER_TOKEN:?set EVOMESH_SERVER_TOKEN}
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: evomesh
+      MYSQL_USER: evomesh
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+    ports: ["127.0.0.1:3307:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  init:
+    build: .
+    environment: *agent-environment
+    command: ["init"]
+    depends_on:
+      mysql: {condition: service_healthy}
+  agent-a:
+    build: .
+    environment:
+      <<: *agent-environment
+      EVOMESH_INSTANCE_ID: agent-a
+    ports: ["127.0.0.1:8765:8765"]
+    volumes: ["agent-a-data:/data"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+  agent-b:
+    build: .
+    environment:
+      <<: *agent-environment
+      EVOMESH_INSTANCE_ID: agent-b
+    ports: ["127.0.0.1:8766:8765"]
+    volumes: ["agent-b-data:/data"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+volumes:
+  mysql-data:
+  agent-a-data:
+  agent-b-data:
