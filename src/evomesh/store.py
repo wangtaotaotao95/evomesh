@@ -146,6 +146,8 @@ class Store:
             raise ValueError("project and instance must contain 1–128 characters")
         if not rationale.strip() or not changes or len(changes) > 32:
             raise ValueError("A rationale and 1–32 file changes are required")
+        if len(rationale) > 10000:
+            raise ValueError("Rationale exceeds 10,000 characters")
         payload = json.dumps(changes, sort_keys=True, ensure_ascii=False)
         if len(payload.encode()) > 500_000:
             raise ValueError("Proposal exceeds 500 KB")

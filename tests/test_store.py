@@ -57,3 +57,11 @@ def test_project_isolation(store, project):
     store.observe(project, "instance-a", "feedback", "Repeated tool failure")
     assert len(store.observations(project)) == 1
     assert not store.observations(project + "-other")
+
+
+def test_large_unicode_proposal_and_case_sensitive_project(store, project):
+    identifier = add(store, project, "改进" * 40000)
+    assert store.list(project)[0]["id"] == identifier
+    assert not store.list(project.upper())
+    assert store.claim(project.upper()) is None
+    assert store.claim(project)["id"] == identifier

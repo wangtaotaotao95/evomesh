@@ -33,3 +33,32 @@ def test_task_api_auth_and_validation(store, project, tmp_path):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_failed_api_task_can_still_generate_evolution_proposal():
+    class FailingAgent:
+        last_observations = []
+
+        def run(self, task):
+            self.last_observations = ["observation-1"]
+            raise RuntimeError("Step limit")
+
+        def reflect(self):
+            return ["proposal-1"]
+
+    server = create_server("127.0.0.1", 0, "test-token", FailingAgent, auto_reflect=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(trust_env=False) as client:
+            response = client.post(
+                f"http://127.0.0.1:{server.server_port}/run",
+                headers={"Authorization": "Bearer test-token"},
+                json={"task": "fails"},
+            )
+        assert response.status_code == 500
+        assert response.json()["proposals"] == ["proposal-1"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

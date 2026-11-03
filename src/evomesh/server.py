@@ -56,20 +56,21 @@ def create_server(
             except (ValueError, OSError):
                 self.send_json(400, {"error": "Expected JSON with a non-empty task; limit 64 KB"})
                 return
-            agent = factory()
+            agent, status, body = None, 200, {}
             try:
+                agent = factory()
                 answer = agent.run(task)
-                proposals = []
-                if auto_reflect and agent.last_observations:
-                    try:
-                        proposals = agent.reflect()
-                    except Exception:
-                        pass  # The task result remains available if reflection fails.
-                self.send_json(
-                    200, {"answer": answer, "proposals": proposals, "instance": agent.instance}
-                )
+                body = {"answer": answer, "instance": agent.instance}
             except Exception:
-                self.send_json(500, {"error": "Agent run failed; inspect observations"})
+                status, body = 500, {"error": "Agent run failed; inspect observations"}
+            finally:
+                body["proposals"] = []
+                if auto_reflect and agent is not None and agent.last_observations:
+                    try:
+                        body["proposals"] = agent.reflect()
+                    except Exception:
+                        body["reflection_error"] = "Reflection failed; retry with reflect"
+            self.send_json(status, body)
 
     server = ThreadingHTTPServer((host, port), Handler)
     server.daemon_threads = True
