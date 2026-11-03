@@ -21,10 +21,12 @@ The generated assistant uses an offline demo model that lists workspace files. F
 | Overview | Real task totals, recent tasks, channel readiness, recent evolution distribution, local instance/worker information |
 | Chat | New/named sessions, resumed history, submit durable tasks, poll step events, cancel |
 | Tasks | Create jobs, inspect results/events, cancel, explicitly rerun failed/interrupted/cancelled jobs |
+| Plans | Create session plans and update step states with version checks; active sessions cannot be edited concurrently |
+| Knowledge & skills | Index workspace text files, search cited passages, remove indexes and inspect on-demand skill bodies |
 | Memory | Add/replace/delete owner-scoped long-term memories |
 | Schedules | Create interval schedules and disable future runs |
 | Channels | Show credential readiness and allowlists, setup snippets, reply status and explicit reply retry |
-| Evolution | Record feedback, read project-wide observations and proposal details/status |
+| Evolution | Record feedback, view private run metrics and capability/source mappings, inspect project-wide observations and evidence-linked proposals |
 
 Evolution checks, merging and instance upgrades remain in the existing CLI integration workflow. The UI does not run arbitrary validation commands or silently adopt proposed code. Channel credentials/config are managed through TOML/environment and a restart; the page does not save secrets or edit the deployment config. Channel readiness means local configuration is present, not proof of platform connectivity.
 

@@ -7,4 +7,4 @@ from .store import Store
 from .tools import Tool, tool
 
 __all__ = ["Agent", "AgentApp", "Config", "Store", "Team", "Tool", "tool"]
-__version__ = "0.3.0a1"
+__version__ = "0.4.0a1"

@@ -17,6 +17,18 @@ class Tool:
     description: str
     parameters: dict
     handler: Callable[..., Any]
+    source_paths: tuple[str, ...] = ()
+    capability: str = "tools"
+
+    def __post_init__(self):
+        import re
+
+        from .evolution import safe_path
+
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", self.capability):
+            raise ValueError("Capability must be a lowercase identifier")
+        for path in self.source_paths:
+            safe_path(path)
 
     def schema(self) -> dict:
         return {
@@ -103,7 +115,14 @@ def workspace_tools(root: Path) -> list[Tool]:
     ]
 
 
-def tool(function=None, *, name: str | None = None, description: str | None = None):
+def tool(
+    function=None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    source_paths: tuple[str, ...] = (),
+    capability: str = "tools",
+):
     """Turn an annotated function into a Tool, without hand-writing JSON Schema.
 
     Supports scalar types, lists, dictionaries, Literal, and unions/Optional.
@@ -150,6 +169,8 @@ def tool(function=None, *, name: str | None = None, description: str | None = No
             description or inspect.getdoc(fn) or fn.__name__,
             object_schema(properties, required),
             fn,
+            source_paths=source_paths,
+            capability=capability,
         )
 
     return decorate(function) if function is not None else decorate

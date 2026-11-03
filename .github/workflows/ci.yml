@@ -21,6 +21,7 @@ jobs:
       - run: python examples/evolution_demo.py
       - run: python examples/framework_app.py && python examples/team.py && python examples/custom_channel.py
       - run: evomesh init && evomesh run --demo 'List my workspace'
+      - run: evomesh evaluate evals/offline.json --factory examples.evaluation_factory:create_app
   mysql:
     runs-on: ubuntu-latest
     services:

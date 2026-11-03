@@ -1,4 +1,10 @@
-# Deployment and v0.3 upgrade
+# Deployment and v0.4 upgrade
+
+## Existing v0.3 installations
+
+Back up SQL, update the package and run `evomesh init` once before restarting replicas. v0.4 adds `runtime_plans`, `runtime_documents`, `runtime_runs` and `proposal_evidence` with indexes; existing tables are unchanged. The new runtime expects these tables. Plans, document indexes and run metrics are owner-scoped; proposal evidence is project-scoped. Old releases ignore the new tables when rolled back.
+
+Skill bodies now load on demand rather than all being appended to the system prompt. Set `context_chars` (default 120000) and `repeat_limit` (default 3) if needed. The latter bounds identical tool+argument attempts per turn; exceeding it stops before another invocation. Existing workflows intentionally repeating the same operation may need a higher explicit limit. No provider token-count guarantee is implied by the character budget.
 
 ## Existing v0.2 installations
 

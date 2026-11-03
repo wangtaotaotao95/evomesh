@@ -122,6 +122,7 @@ def submit(
     rationale: str,
     changes: list[dict],
     base: str | None = None,
+    observation_ids: list[str] | None = None,
 ) -> str:
     base = revision(repo, base or "HEAD")
     validate_changes(repo, base, changes)
@@ -132,6 +133,7 @@ def submit(
         base_commit=base,
         rationale=rationale,
         changes=changes,
+        observation_ids=observation_ids,
     )
 
 

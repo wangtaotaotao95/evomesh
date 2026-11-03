@@ -1542,3 +1542,31 @@ progress::-moz-progress-bar {
   background: #a3bb91;
   border-radius: 5px;
 }
+.plan-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.plan-step:last-child {
+  border-bottom: 0;
+}
+.plan-step > div:last-child {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+#search-knowledge-form input {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 850px) {
+  .plan-step {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

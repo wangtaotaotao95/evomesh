@@ -29,14 +29,25 @@
 - [x] One-command console with embedded worker; reusable server/custom channel adapter APIs
 - [x] Protocol fixtures, HTTP end-to-end tests and browser flow verification
 
+## v0.4 — plans, knowledge and evidence-driven evolution
+
+- [x] Owner/session plans with versions and session-lease fencing
+- [x] Bounded workspace text indexing and cited lexical retrieval with freshness checks
+- [x] Skill catalog and on-demand skill body loading
+- [x] Character context budgeting, whole-turn preservation and duplicate-call limits
+- [x] Private run metrics and whole-stack capability/source discovery
+- [x] Custom tool source provenance and atomic proposal-observation evidence links
+- [x] Behavioral evaluation, suite fingerprint/baseline comparison and integration gate tests
+- [x] Console plans/knowledge/skills, runtime metrics and source catalog
+
 ## Next: richer assistant surfaces without splitting the framework
 
 - [ ] Persistent interactive browser worker and takeover
-- [ ] Durable review/approval flow, pause/resume checkpoints and task plans
+- [ ] Durable review/approval flow, pause/resume checkpoints and executable task graphs
 - [ ] Token streaming and AG-UI adapter, richer personal activity UI
 - [ ] More provider/channel connectors and OAuth onboarding
 - [ ] Document/PDF/media workflows and personal service adapters
-- [ ] Rich skill management, semantic recall and context compression
+- [ ] Skill marketplace/installation, semantic recall and model-generated context compression
 
 ## Next: prove and deploy useful evolution
 

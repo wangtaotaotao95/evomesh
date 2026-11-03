@@ -163,3 +163,93 @@ def test_candidate_code_is_imported_and_credentials_removed(store, repo, project
 def test_validator_sees_candidate_loop_source(store, repo, project):
     proposal(store, repo, project, "src/loop.py", "raise RuntimeError('broken loop')\n")
     assert worker(store, repo, project, "import loop").once()["status"] == "rejected"
+
+
+def test_proposal_evidence_is_atomic_and_project_scoped(store, repo, project):
+    observation = store.observe(project, "worker-b", "retrieval_miss", "capability=knowledge")
+    base = revision(repo)
+    changes = [make_change(repo, base, "tool.py", "def answer():\n    return 3\n")]
+    with pytest.raises(ValueError, match="project"):
+        submit(
+            store,
+            repo,
+            project=project,
+            instance="a",
+            target="tool",
+            rationale="fix",
+            changes=changes,
+            observation_ids=[store.observe("other", "x", "feedback", "private")],
+        )
+    assert store.list(project) == []
+    identifier = submit(
+        store,
+        repo,
+        project=project,
+        instance="a",
+        target="tool",
+        rationale="fix",
+        changes=changes,
+        observation_ids=[observation],
+    )
+    assert store.list(project)[0]["observation_ids"] == [observation]
+    assert (
+        submit(
+            store,
+            repo,
+            project=project,
+            instance="b",
+            target="tool",
+            rationale="same",
+            changes=changes,
+            observation_ids=[observation],
+        )
+        == identifier
+    )
+    assert worker(store, repo, project).once()["status"] == "integrated"
+
+
+def test_behavioral_evaluation_gates_arbitrary_code_evolution(store, repo, project):
+    import json
+
+    (repo / "behavior.py").write_text('def answer():\n    return "baseline"\n')
+    (repo / "eval_factory.py").write_text("""from pathlib import Path
+from evomesh import AgentApp, Config
+from behavior import answer
+class Model:
+    def complete(self, messages, tools):
+        return {"role":"assistant", "content":answer()}
+def create_app():
+    return AgentApp(Config(database_url="sqlite:///:memory:",
+                          workspace=Path("scratch"),repo=Path.cwd()), model=Model())
+""")
+    (repo / "eval.json").write_text(
+        json.dumps(
+            [
+                {
+                    "name": "correct-answer",
+                    "prompt": "Check behavior",
+                    "contains": ["improved"],
+                    "max_model_calls": 1,
+                    "max_tool_calls": 0,
+                }
+            ]
+        )
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Evaluation fixtures")
+    command = [
+        sys.executable,
+        "-m",
+        "evomesh.cli",
+        "evaluate",
+        "eval.json",
+        "--factory",
+        "eval_factory:create_app",
+    ]
+    proposal(store, repo, project, "behavior.py", 'def answer():\n    return "still wrong"\n')
+    assert Integrator(store, repo, project, [command]).once()["status"] == "rejected"
+    proposal(store, repo, project, "behavior.py", 'def answer():\n    return "improved"\n')
+    integrated = Integrator(store, repo, project, [command]).once()
+    assert integrated["status"] == "integrated"
+    assert "improved" in source_file(repo, integrated["commit"], "behavior.py").decode()
+    assert (repo / "behavior.py").read_text().endswith('return "baseline"\n')

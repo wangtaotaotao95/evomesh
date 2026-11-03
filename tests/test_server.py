@@ -222,3 +222,44 @@ def test_webhook_http_ack_dedup_and_worker_reply(store, project, tmp_path, monke
         server.server_close()
         thread.join()
         provider.close()
+
+
+def test_cognition_api_and_source_catalog(store, project, tmp_path):
+    from evomesh import AgentApp, Config
+
+    app = AgentApp(
+        Config(project=project, repo=tmp_path, workspace=tmp_path / "workspace", demo=True),
+        store=store,
+        initialize=False,
+    )
+    (tmp_path / "workspace" / "notes.md").write_text("Knowledge for whole-stack evolution\n")
+    server = create_server("127.0.0.1", 0, "secret", app.agent, app=app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}", trust_env=False) as c:
+            for path in ("/knowledge", "/plans", "/skills", "/capabilities", "/runs"):
+                assert c.get(path).status_code == 401
+            c.headers["Authorization"] = "Bearer secret"
+            assert c.post("/knowledge/index", json={"path": "notes.md"}).status_code == 200
+            hit = c.get("/knowledge?query=evolution").json()[0]
+            assert hit["path"] == "notes.md" and hit["start_line"] == 1
+            plan = {
+                "session": "main",
+                "title": "Research",
+                "steps": [{"title": "Read", "status": "todo"}],
+                "version": 0,
+            }
+            assert c.post("/plans", json=plan).json()["version"] == 1
+            assert c.post("/plans", json=plan).status_code == 400
+            token, _ = app.state.acquire_session("main")
+            assert c.post("/plans", json={**plan, "version": 1}).status_code == 409
+            app.state.release_session("main", token)
+            assert c.get("/plans/main").json()["title"] == "Research"
+            assert c.get("/capabilities").json()
+            assert c.post("/run", json={"task": "List files", "session": "main"}).status_code == 200
+            assert c.get("/runs").json()[0]["metrics"]["model_calls"] == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

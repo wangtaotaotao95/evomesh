@@ -6,6 +6,14 @@ JSON request bodies are capped at 64 KB. Successful responses are JSON with `Cac
 
 | Method/path | Body or query | Result |
 |---|---|---|
+| `GET /capabilities` | none | Whole-stack capability/source catalog; custom tool provenance |
+| `GET /runs` | none | Latest 100 owner-scoped execution metrics; no raw prompts/answers |
+| `GET /skills`, `GET /skills/{name}` | none | Skill catalog or selected body/digest |
+| `GET /plans`, `GET /plans/{session}` | none | Recent plans or one session plan |
+| `POST /plans` | `{"session":"main","title":"Research","steps":[{"title":"Read","status":"todo"}],"version":0}` | Create/update with expected version; active session returns 409 |
+| `GET /knowledge?query=...` | optional query | Matching chunks with file/line citations, or latest 200 indexed document metadata |
+| `POST /knowledge/index` | `{"path":"notes.md"}` | Index/reindex one visible workspace text file |
+| `POST /knowledge/remove` | `{"id":"..."}` | Remove index only; source file remains |
 | `GET /status` | none | Version, project/owner, model, storage kind, task totals, local embedded-worker status; no credentials |
 | `GET /channels` | none | Configured channel status, allowlists, missing env names and webhook paths |
 | `GET /deliveries` | none | Latest 100 reply states; excludes callback URLs, tokens and private targets |

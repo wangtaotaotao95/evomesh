@@ -130,6 +130,24 @@ def create_server(
                         "embedded_worker": bool(server.worker and server.worker.is_alive()),
                         "worker_error": server.worker_error,
                     }
+                elif parts == ["capabilities"]:
+                    result = app.capabilities()
+                elif parts == ["runs"]:
+                    result = app.learning.list()
+                elif parts == ["skills"]:
+                    result = app.skills.list()
+                elif len(parts) == 2 and parts[0] == "skills":
+                    result = app.skills.load(parts[1])
+                elif parts == ["plans"]:
+                    result = app.cognition.list_plans()
+                elif len(parts) == 2 and parts[0] == "plans":
+                    result = app.cognition.plan(parts[1])
+                elif parts == ["knowledge"]:
+                    result = (
+                        app.cognition.search(query["query"][0])
+                        if query.get("query")
+                        else app.cognition.list_documents()
+                    )
                 elif parts == ["channels"]:
                     result = hub.status()
                 elif parts == ["deliveries"]:
@@ -232,6 +250,14 @@ def create_server(
                     if data.get("acknowledge_duplicate_risk") is not True:
                         raise ValueError("Explicit duplicate risk acknowledgement required")
                     result = {"changed": hub.state.retry_reply(parts[1])}
+                elif parts == ["plans"]:
+                    result = app.cognition.save_plan(
+                        data["session"], data["title"], data["steps"], data["version"]
+                    )
+                elif parts == ["knowledge", "index"]:
+                    result = app.cognition.index_document(data["path"])
+                elif parts == ["knowledge", "remove"]:
+                    result = {"deleted": app.cognition.remove_document(data["id"])}
                 elif parts == ["observations"]:
                     detail = data["detail"]
                     if not isinstance(detail, str) or not 1 <= len(detail.strip()) <= 16000:

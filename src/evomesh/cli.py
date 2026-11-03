@@ -93,6 +93,31 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--every", type=float, required=True, help="Interval in seconds")
     recurring.add_parser("list")
     recurring.add_parser("disable").add_argument("id")
+    commands.add_parser("capabilities", help="Show capability-to-source evolution catalog")
+    commands.add_parser("runs", help="List recent owner-scoped execution metrics")
+    skill = commands.add_parser("skills").add_subparsers(dest="action", required=True)
+    skill.add_parser("list")
+    skill.add_parser("show").add_argument("name")
+    knowledge = commands.add_parser("knowledge").add_subparsers(dest="action", required=True)
+    knowledge.add_parser("list")
+    knowledge.add_parser("index").add_argument("path")
+    knowledge.add_parser("search").add_argument("query")
+    knowledge.add_parser("remove").add_argument("id")
+    plan = commands.add_parser("plan").add_subparsers(dest="action", required=True)
+    plan.add_parser("list")
+    plan.add_parser("show").add_argument("session")
+    put = plan.add_parser("set")
+    put.add_argument("session")
+    put.add_argument("title")
+    put.add_argument("steps", nargs="+")
+    put.add_argument("--version", type=int, default=0)
+    evaluation = commands.add_parser("evaluate", help="Run operator-supplied behavioral cases")
+    evaluation.add_argument("suite", type=Path)
+    evaluation.add_argument(
+        "--factory", required=True, help="Trusted module:function returning a fresh AgentApp"
+    )
+    evaluation.add_argument("--output", type=Path)
+    evaluation.add_argument("--baseline", type=Path)
     return p
 
 
@@ -124,7 +149,41 @@ def display(value):
 
 def dispatch(args, store: Store, cfg: Config) -> None:
     state = RuntimeStore(store, cfg.project, cfg.owner)
-    if args.command == "init":
+    if args.command in {"capabilities", "runs", "skills", "knowledge", "plan"}:
+        from .cognition import CognitionStore, SkillLibrary
+        from .learning import LearningStore, capability_catalog
+
+        cognition = CognitionStore(state, cfg.workspace)
+        if args.command == "capabilities":
+            display(capability_catalog(cfg.repo))
+        elif args.command == "runs":
+            display(LearningStore(state).list())
+        elif args.command == "skills":
+            library = SkillLibrary(cfg.repo)
+            display(library.list() if args.action == "list" else library.load(args.name))
+        elif args.command == "knowledge":
+            display(
+                {
+                    "list": lambda: cognition.list_documents(),
+                    "index": lambda: cognition.index_document(args.path),
+                    "search": lambda: cognition.search(args.query),
+                    "remove": lambda: cognition.remove_document(args.id),
+                }[args.action]()
+            )
+        else:
+            display(
+                cognition.list_plans()
+                if args.action == "list"
+                else cognition.plan(args.session)
+                if args.action == "show"
+                else cognition.save_plan(
+                    args.session,
+                    args.title,
+                    [{"title": step, "status": "todo"} for step in args.steps],
+                    args.version,
+                )
+            )
+    elif args.command == "init":
         store.initialize()
         print("Evolution and application storage initialized.")
     elif args.command in {"run", "chat", "reflect", "serve", "console", "task-worker"}:
@@ -289,6 +348,30 @@ def dispatch(args, store: Store, cfg: Config) -> None:
 def main() -> None:
     args, store = parser().parse_args(), None
     try:
+        if args.command == "evaluate":
+            import importlib
+
+            from .evaluation import compare_reports, evaluate
+
+            module, separator, name = args.factory.partition(":")
+            if not separator or not module or not name:
+                raise ValueError("Factory must be module:function")
+            # The operator explicitly selects trusted local factory code.
+            sys.path.insert(0, str(Path.cwd()))
+            factory = getattr(importlib.import_module(module), name)
+            report = evaluate(factory, json.loads(args.suite.read_text(encoding="utf-8")))
+            if args.baseline:
+                report["comparison"] = compare_reports(
+                    json.loads(args.baseline.read_text(encoding="utf-8")), report
+                )
+            if args.output:
+                args.output.write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            display(report)
+            if not report["passed"]:
+                raise SystemExit(1)
+            return
         if args.command == "new":
             scaffold(args.destination, args.template)
             print(f"Created {args.template} project at {args.destination.resolve()}")

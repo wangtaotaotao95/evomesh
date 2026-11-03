@@ -10,7 +10,7 @@ Multi-instance operation. SQLite or MySQL. Evolution across the whole agent stac
 [![CI](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
-![Alpha](https://img.shields.io/badge/status-v0.3_alpha-orange)
+![Alpha](https://img.shields.io/badge/status-v0.4_alpha-orange)
 
 [中文](README.zh-CN.md) · [Web console](docs/console.md) · [Channels](docs/channels.md) · [Framework guide](docs/framework.md) · [Capability alignment](docs/alignment.md) · [Deployment](docs/deployment.md)
 
@@ -20,7 +20,7 @@ Agent friction can come from a skill, a missing tool, its soul, the ReAct loop, 
 
 The assistant and framework use **the same `AgentApp` runtime**. Memory, conversations, tools, background tasks, schedules, delegation, and evolution are reusable APIs, not features trapped inside a CLI.
 
-**v0.3 is an alpha, not full Hermes/OpenMuse parity.** It adds a bundled web console and Feishu/Lark, DingTalk and Telegram text channels on top of the durable runtime. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
+**v0.4 is an alpha, not full Hermes/OpenMuse parity.** It adds persistent plans, cited workspace retrieval, on-demand skills, context budgeting, repeat detection, run metrics and behavioral evaluation on top of the web/channel runtime. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
 
 ## Two ways to start
 
@@ -70,7 +70,12 @@ Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use 
 | Message channels | Feishu/Lark, DingTalk and Telegram text callbacks/replies | `ChannelHub`, `ChannelAdapter`, atomic SQL inbox/outbox |
 | Durable conversations | `chat --session main`, `session show/list --query` | `app.run(..., session=...)`, owner-scoped history |
 | Personal memory | `remember/recall/forget` tools; `memory` commands | `app.state.remember/recall/forget` |
-| File tools, soul, skills | Loaded from workspace/source config | Normal `Tool` objects and configurable `Agent` |
+| Plans | Console plan editor; `plan` commands; planning tools | Versioned, session-fenced `app.cognition.save_plan/plan` |
+| Knowledge retrieval | Index/search text documents with file/line citations | `app.cognition.index_document/search`; fresh-source digest checks |
+| Skills | Directory discovery + `read_skill` on demand | `SkillLibrary.list/load`, source-based skill evolution |
+| Context and loop control | Configurable character budget and repeat limits | Whole-turn trimming, tool-pair preservation, structured friction |
+| Evaluation | `evaluate` command; behavioral and call/error budgets | `evaluate(factory, cases)`, suite fingerprints, baseline comparison |
+| File tools and soul | Loaded from workspace/source config | Normal `Tool` objects and configurable `Agent` |
 | Background tasks | `task submit/show/cancel/retry/events` | `app.submit`, `app.work_once`, durable task state |
 | Recurring work | `schedule add --every 3600`; task worker | Transactional schedule tick → task queue |
 | Progress and control | `run --events`, task event receipts | Event callbacks, cancellation, tool policy hooks |
@@ -117,6 +122,23 @@ evomesh schedule add 'Review my notes' --every 3600
 ```
 
 Tasks, results, events, schedules, memory and completed conversation turns persist in SQL. The task worker must stay running. Expired worker leases mark tasks `interrupted`; unknown external effects are **not automatically replayed**. Schedules coalesce missed intervals into one task, with atomic enqueueing across workers.
+
+## Agent capabilities that evolve together
+
+```bash
+evomesh plan set main 'Research a topic' 'Read references' 'Write summary'
+evomesh knowledge index notes.md
+evomesh knowledge search 'agent evolution'
+evomesh skills list
+evomesh capabilities
+evomesh runs
+# Offline evaluation from the source checkout:
+evomesh evaluate evals/offline.json --factory examples.evaluation_factory:create_app
+```
+
+Plans track progress; they do not automatically execute a workflow. Retrieval is bounded lexical search, not embeddings. The agent receives a skill catalog and loads selected skill bodies only when needed. Context budgeting measures characters, not provider tokens, and does not invent a summary.
+
+Every run records owner-scoped call/error counts, duration, context pressure and revision metadata. Shared friction points to the affected capability/source paths; reflection proposals link actual same-project observation IDs. Custom tools can declare `source_paths` and `capability` so their implementations participate in the same process. [Agent capabilities and evolution guide](docs/agent-capabilities.md).
 
 ## The evolution loop
 

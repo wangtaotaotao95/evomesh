@@ -1,0 +1,12 @@
+[
+  {
+    "name": "workspace-discovery",
+    "prompt": "List my workspace files",
+    "contains": ["notes.md"],
+    "required_tools": ["list_files"],
+    "forbidden_tools": ["write_file", "terminal"],
+    "max_model_calls": 2,
+    "max_tool_calls": 1,
+    "max_tool_errors": 0
+  }
+]

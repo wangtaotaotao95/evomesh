@@ -22,6 +22,8 @@ class Config:
     demo: bool = False
     max_steps: int = 12
     history_turns: int = 20
+    context_chars: int = 120000
+    repeat_limit: int = 3
     auto_reflect: bool = False
     terminal: str = "disabled"
     allowed_hosts: list[str] = field(default_factory=list)
@@ -69,6 +71,10 @@ class Config:
             raise ValueError("max_steps must be an integer in 1–100")
         if type(self.history_turns) is not int or not 1 <= self.history_turns <= 100:
             raise ValueError("history_turns must be an integer in 1–100")
+        if type(self.context_chars) is not int or not 16000 <= self.context_chars <= 1000000:
+            raise ValueError("context_chars must be an integer in 16,000–1,000,000")
+        if type(self.repeat_limit) is not int or not 2 <= self.repeat_limit <= 20:
+            raise ValueError("repeat_limit must be an integer in 2–20")
         if self.terminal not in {"disabled", "local", "docker"}:
             raise ValueError("terminal must be disabled, local or docker")
         if type(self.demo) is not bool or type(self.auto_reflect) is not bool:

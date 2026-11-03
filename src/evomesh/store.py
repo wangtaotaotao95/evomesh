@@ -68,6 +68,19 @@ observations = Table(
 Index("ix_observation_project", observations.c.project, observations.c.created_at)
 
 
+proposal_evidence = Table(
+    "proposal_evidence",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("proposal_id", String(36), nullable=False),
+    Column("observation_id", String(36), nullable=False),
+    Column("project", String(128), nullable=False),
+    mysql_charset="utf8mb4",
+    mysql_collate="utf8mb4_bin",
+)
+Index("ix_proposal_evidence", proposal_evidence.c.project, proposal_evidence.c.proposal_id)
+
+
 class LeaseLost(RuntimeError):
     pass
 
@@ -99,7 +112,7 @@ class Store:
 
     def initialize(self) -> None:
         metadata.create_all(self.engine)
-        from . import channel_store  # noqa: F401 — register channel tables
+        from . import channel_store, cognition, learning  # noqa: F401 — register tables
         from .runtime_store import metadata as runtime_metadata
 
         runtime_metadata.create_all(self.engine)
@@ -143,6 +156,7 @@ class Store:
         base_commit: str,
         rationale: str,
         changes: list[dict],
+        observation_ids: list[str] | None = None,
     ) -> str:
         if target not in {"skill", "tool", "soul", "loop", "code"}:
             raise ValueError("Unknown evolution target")
@@ -155,10 +169,28 @@ class Store:
         payload = json.dumps(changes, sort_keys=True, ensure_ascii=False)
         if len(payload.encode()) > 500_000:
             raise ValueError("Proposal exceeds 500 KB")
+        evidence = [] if observation_ids is None else observation_ids
+        if (
+            not isinstance(evidence, list)
+            or len(evidence) > 100
+            or any(not isinstance(i, str) or len(i) != 36 for i in evidence)
+        ):
+            raise ValueError("Expected up to 100 observation IDs")
+        evidence = list(dict.fromkeys(evidence))
         fingerprint = hashlib.sha256(f"{project}\0{base_commit}\0{payload}".encode()).hexdigest()
         identifier, now = str(uuid.uuid4()), time.time()
         try:
             with self.engine.begin() as conn:
+                if evidence:
+                    found = set(
+                        conn.execute(
+                            select(observations.c.id).where(
+                                observations.c.project == project, observations.c.id.in_(evidence)
+                            )
+                        ).scalars()
+                    )
+                    if found != set(evidence):
+                        raise ValueError("Evidence must reference observations in this project")
                 conn.execute(
                     insert(proposals).values(
                         id=identifier,
@@ -174,6 +206,17 @@ class Store:
                         updated_at=now,
                     )
                 )
+                for observation_id in evidence:
+                    conn.execute(
+                        insert(proposal_evidence).values(
+                            id=hashlib.sha256(
+                                f"{identifier}:{observation_id}".encode()
+                            ).hexdigest(),
+                            proposal_id=identifier,
+                            observation_id=observation_id,
+                            project=project,
+                        )
+                    )
         except IntegrityError:
             with self.engine.connect() as conn:
                 existing = conn.execute(
@@ -196,7 +239,25 @@ class Store:
                 .order_by(proposals.c.created_at.desc())
                 .limit(limit)
             )
-            return [dict(row) for row in rows.mappings()]
+            result = [dict(row) for row in rows.mappings()]
+            identifiers = [row["id"] for row in result]
+            linked = (
+                conn.execute(
+                    select(proposal_evidence).where(
+                        proposal_evidence.c.project == project,
+                        proposal_evidence.c.proposal_id.in_(identifiers),
+                    )
+                )
+                .mappings()
+                .all()
+                if identifiers
+                else []
+            )
+            for row in result:
+                row["observation_ids"] = sorted(
+                    link["observation_id"] for link in linked if link["proposal_id"] == row["id"]
+                )
+            return result
 
     def claim(self, project: str, lease_seconds: float = 120) -> dict | None:
         if lease_seconds <= 0:

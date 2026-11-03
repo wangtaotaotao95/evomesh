@@ -27,6 +27,8 @@ const labels = {
   chat: "与助手对话",
   tasks: "任务",
   memory: "长期记忆",
+  plans: "分步计划",
+  knowledge: "知识与技能",
   schedules: "定时任务",
   channels: "消息渠道",
   evolution: "进化记录",
@@ -196,6 +198,8 @@ async function render(quiet = false) {
         ) + panel("最近 100 个任务", taskTable(cachedTasks));
     }
     if (page === "memory") html = await memory();
+    if (page === "plans") html = await plansPage();
+    if (page === "knowledge") html = await knowledgePage();
     if (page === "schedules") html = await schedules();
     if (page === "channels") html = await channels();
     if (page === "evolution") html = await evolution();
@@ -360,7 +364,11 @@ async function channels() {
   );
 }
 async function evolution() {
-  const data = await api("/evolution");
+  const [data, catalog, runs] = await Promise.all([
+    api("/evolution"),
+    api("/capabilities"),
+    api("/runs"),
+  ]);
   cachedProposals = data.proposals;
   return (
     head(
@@ -372,6 +380,25 @@ async function evolution() {
       `<form id="feedback-form" class="panel-body feedback-row"><textarea name="detail" aria-label="体验反馈" placeholder="哪一步不够流畅？期望的行为是什么？" maxlength="16000" required></textarea><button class="primary">记录反馈</button></form>`,
     ) +
     `<div class="notice">记录和提案按 project 共享。代码变更由集成进程在独立工作树中验证，合并到 evolution/main 后再显式升级实例。</div>` +
+    panel(
+      "最近运行指标",
+      runs.length
+        ? `<div class="table-wrap"><table><thead><tr><th>会话 / 状态</th><th>模型 / 工具调用</th><th>耗时</th><th>上下文裁剪</th></tr></thead><tbody>${runs
+            .slice(0, 10)
+            .map(
+              (r) =>
+                `<tr><td>${esc(r.session.slice(0, 30))}<br>${badge(r.status)}</td><td>${r.metrics.model_calls || 0} / ${r.metrics.tool_calls || 0}</td><td>${Number(r.metrics.duration_seconds || 0).toFixed(2)}s</td><td>${r.metrics.context_compactions || 0}</td></tr>`,
+            )
+            .join("")}</tbody></table></div>`
+        : empty(
+            "还没有运行指标",
+            "执行一次任务后会记录调用次数、耗时和上下文压力。",
+          ),
+    ) +
+    panel(
+      "全域能力与源码",
+      `<div class="panel-body"><p class="muted">所有模块都可以进入同一提案与验证流程。源码路径用于定位问题，不限制可进化范围。</p><div class="memory-grid">${catalog.map((c) => `<div class="memory-card"><h3>${esc(c.name)}</h3><small>${c.available_in_repo ? "当前源码仓库可用" : "需要指向框架源码仓库"}</small><p>${c.source_paths.map(esc).join("\n")}</p></div>`).join("")}</div></div>`,
+    ) +
     panel(
       "最近 100 个进化提案",
       data.proposals.length
@@ -471,11 +498,122 @@ function newSession() {
   else location.hash = "chat";
 }
 
+let cachedPlans = [];
+async function plansPage() {
+  cachedPlans = await api("/plans");
+  const states = {
+    todo: "待开始",
+    doing: "进行中",
+    done: "已完成",
+    blocked: "受阻",
+  };
+  return (
+    head(
+      "plans",
+      "将复杂任务拆成可追踪的步骤。计划与会话一起保存，多实例共享。",
+    ) +
+    panel(
+      "创建计划",
+      `<form id="plan-form" class="panel-body form-stack"><div><label for="plan-session">关联会话</label><input id="plan-session" name="session" maxlength="128" value="main" required></div><div><label for="plan-title">计划名称</label><input id="plan-title" name="title" maxlength="512" placeholder="例如：整理项目资料" required></div><div><label for="plan-steps">步骤（每行一项，最多 30 项）</label><textarea id="plan-steps" name="steps" placeholder="阅读资料\n整理要点\n核对结果" required></textarea></div><button class="primary">创建计划</button></form>`,
+    ) +
+    `<div class="notice">计划用于跟踪进展，不会自动执行。与助手在同名会话中对话时，它会读取计划并更新状态。运行中的会话会阻止并发编辑。</div>` +
+    (cachedPlans.length
+      ? cachedPlans
+          .map((plan) =>
+            panel(
+              esc(plan.title),
+              `<div class="panel-body"><p class="muted">会话 ${esc(plan.session)} · 版本 ${plan.version}</p>${plan.steps
+                .map(
+                  (step, index) =>
+                    `<div class="plan-step"><div><span class="pill">${states[step.status]}</span> ${index + 1}. ${esc(step.title)}</div><div>${Object.entries(
+                      states,
+                    )
+                      .filter(([status]) => status !== step.status)
+                      .map(
+                        ([status, label]) =>
+                          `<button class="small" data-plan-step="${esc(JSON.stringify([plan.session, index, status]))}">${label}</button>`,
+                      )
+                      .join(" ")}</div></div>`,
+                )
+                .join("")}</div>`,
+            ),
+          )
+          .join("")
+      : empty("还没有分步计划", "也可以直接在对话中要求助手制定计划。"))
+  );
+}
+async function knowledgePage() {
+  const [documents, skills] = await Promise.all([
+    api("/knowledge"),
+    api("/skills"),
+  ]);
+  return (
+    head("knowledge", "用有出处的资料回答问题，在需要时加载技能。") +
+    panel(
+      "工作区文档索引",
+      `<form id="index-form" class="panel-body form-grid"><div><label for="document-path">文件相对路径</label><input id="document-path" name="path" maxlength="512" placeholder="notes/project.md" required></div><p class="muted">先将文本、Markdown、CSV 或 JSON 文件放入工作区；单文件不超过 100 KB。</p><button class="primary">索引文件</button></form>`,
+    ) +
+    panel(
+      "搜索资料",
+      `<form id="search-knowledge-form" class="panel-body feedback-row"><input name="query" aria-label="知识检索关键词" maxlength="512" placeholder="输入关键词，检索带行号的原文" required><button class="primary">搜索</button></form><div id="knowledge-results"></div>`,
+    ) +
+    panel(
+      "已索引文档",
+      documents.length
+        ? `<div class="table-wrap"><table><thead><tr><th>文件</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${documents.map((d) => `<tr><td>${esc(d.path)}</td><td>${fmtDate(d.updated_at)}</td><td><button class="small" data-remove-document="${esc(d.id)}">移除索引</button></td></tr>`).join("")}</tbody></table></div>`
+        : empty(
+            "还没有索引文档",
+            "检索会排除已修改或删除的文件，重新索引后恢复。",
+          ),
+    ) +
+    panel(
+      "按需加载的技能",
+      skills.length
+        ? `<div class="panel-body memory-grid">${skills.map((s) => `<article class="memory-card"><h3>${esc(s.name)}</h3><p>${esc(s.description)}</p><button class="small" data-skill="${esc(s.name)}">查看技能</button></article>`).join("")}</div>`
+        : empty(
+            "当前仓库没有技能",
+            "在 skills/名称/SKILL.md 中维护技能，助手按需读取正文。",
+          ),
+    )
+  );
+}
+
 // Delegated handlers also cover dialogs; untrusted content always passes through esc().
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   try {
+    if (button.dataset.skill) {
+      const skill = await api(
+        "/skills/" + encodeURIComponent(button.dataset.skill),
+      );
+      showDetail(
+        "技能 · " + skill.name,
+        `<p class="muted">${esc(skill.path)}</p><pre>${esc(skill.content)}</pre>`,
+      );
+    }
+    if (button.dataset.planStep) {
+      const [planSession, index, status] = JSON.parse(button.dataset.planStep);
+      const plan = cachedPlans.find((p) => p.session === planSession);
+      const steps = plan.steps.map((step, i) =>
+        i === index ? { ...step, status } : step,
+      );
+      await api("/plans", {
+        session: planSession,
+        title: plan.title,
+        steps,
+        version: plan.version,
+      });
+      toast("计划进度已保存");
+      await render();
+    }
+    if (
+      button.dataset.removeDocument &&
+      confirm("移除此索引？工作区中的源文件会保留。")
+    ) {
+      await api("/knowledge/remove", { id: button.dataset.removeDocument });
+      await render();
+    }
     if (button.dataset.task) await taskDetail(button.dataset.task);
     if (button.dataset.action === "new-task")
       showDetail(
@@ -569,6 +707,9 @@ document.addEventListener("submit", async (event) => {
       "memory-form",
       "schedule-form",
       "feedback-form",
+      "plan-form",
+      "index-form",
+      "search-knowledge-form",
     ].includes(form.id)
   )
     return;
@@ -578,7 +719,39 @@ document.addEventListener("submit", async (event) => {
   button.disabled = true;
   const data = Object.fromEntries(new FormData(form));
   try {
-    if (form.id === "chat-form") {
+    if (form.id === "plan-form") {
+      await api("/plans", {
+        session: data.session,
+        title: data.title,
+        version: 0,
+        steps: data.steps
+          .split("\n")
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .map((title) => ({ title, status: "todo" })),
+      });
+      toast("计划已创建");
+      await render();
+    } else if (form.id === "index-form") {
+      await api("/knowledge/index", { path: data.path });
+      toast("文档已索引");
+      await render();
+    } else if (form.id === "search-knowledge-form") {
+      const hits = await api(
+        "/knowledge?query=" + encodeURIComponent(data.query),
+      );
+      $("#knowledge-results").innerHTML = hits.length
+        ? hits
+            .map(
+              (hit) =>
+                `<article class="observation"><h3>${esc(hit.path)} : ${hit.start_line}–${hit.end_line}</h3><pre>${esc(hit.text)}</pre></article>`,
+            )
+            .join("")
+        : empty(
+            "没有找到匹配内容",
+            "请先索引相关文件；文件改动后需要重新索引。",
+          );
+    } else if (form.id === "chat-form") {
       if (activeTask) return;
       const prompt = data.task.trim();
       if (!prompt) return;
