@@ -99,6 +99,9 @@ class Store:
 
     def initialize(self) -> None:
         metadata.create_all(self.engine)
+        from .runtime_store import metadata as runtime_metadata
+
+        runtime_metadata.create_all(self.engine)
 
     def close(self) -> None:
         self.engine.dispose()

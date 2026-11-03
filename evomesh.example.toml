@@ -1,0 +1,22 @@
+[evomesh]
+project = "personal"
+owner = "personal"
+workspace = "workspace"
+repo = "."
+database_url = "sqlite:///.evomesh/ledger.db"
+demo = true
+history_turns = 20
+max_steps = 12
+auto_reflect = false
+terminal = "disabled" # Opt in to "local" or "docker".
+allowed_hosts = [] # For read_web, e.g. ["example.com"]. No interactive browser.
+plugin_modules = [] # Trusted Python modules exporting register(app).
+
+# Set demo=false for real inference, and provide model/base_url here or through env.
+# model = "your-tool-capable-model"
+# base_url = "https://your-provider.example/v1"
+# API keys belong in EVOMESH_API_KEY, not in this file.
+
+# Optional: pip install -e '.[mcp]'; configure trusted stdio servers.
+# [evomesh.mcp_servers]
+# project_tools = ["python", "/absolute/path/to/mcp_server.py"]

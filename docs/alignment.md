@@ -1,0 +1,39 @@
+# Hermes / OpenMuse capability alignment
+
+Reviewed 2026-11-03 against the primary [Hermes README](https://github.com/NousResearch/hermes-agent/blob/main/README.md) and [OpenMuse README](https://github.com/CopilotKit/OpenMuse/blob/main/README.md). The user's [OpenMuse fork](https://github.com/wangtaotaotao95/openmuse) was also inspected. This is a planning and implementation matrix, not a benchmark or a claim of complete parity.
+
+Hermes emphasizes learning from use, personal memory, scheduled work, messaging surfaces, tool environments and delegation. OpenMuse emphasizes a personal agent with visible durable work, browser/computer access, documents and connected personal services. EvoMesh keeps both use cases available through the same assistant/framework runtime.
+
+| Capability | EvoMesh v0.2 implementation | Remaining gap |
+|---|---|---|
+| Ready-to-run assistant | Assistant scaffold, CLI chat, persisted named sessions, model configuration | Rich TUI, mobile/desktop client |
+| Ready-to-use framework | Framework scaffold, `AgentApp`, `@tool`, model/tool injection, async bridge, hooks | More native model adapters and richer tracing ecosystem |
+| Personal memory and recall | Owner-scoped SQL memory; resumed bounded conversations; literal history search | Semantic/FTS recall, compression, user modeling |
+| Skills and persona | SOUL.md and SKILL.md loading; source-based evolution proposals | Skill catalog/install/search and progressive loading |
+| Background work | Durable SQL tasks, leases, events, cancellation, explicit retry | Pause/resume checkpoints, task plans and external notification delivery |
+| Recurring work | Interval schedules and transactional enqueueing; multi-worker deduplication | Cron/timezone expressions, backoff policies and platform delivery |
+| Agent computer | File tools; opt-in local terminal or restricted Docker command runner | Interactive terminal, browser session/profile/takeover, graphical desktop |
+| Web access | Allowlisted public HTTPS text retrieval | Browser automation and search-provider adapters |
+| Tool ecosystem | Typed decorators, trusted plugin modules, persistent MCP stdio tools | MCP remote OAuth/resources/prompts/media; packaged connector catalog |
+| Delegation | Named apps, parallel `Team.run`, coordinator delegation tool | Durable subtask graphs, recursive planning and per-child budgets |
+| Visible/control flow | CLI events, persisted task receipts, application tool-policy hook | Token streaming, AG-UI/rich cards, durable human approvals UI |
+| Personal services | Custom tools/MCP integration points | Native Gmail/calendar/messaging adapters and OAuth onboarding |
+| Documents and media | Workspace files only | PDF forms, attachments, voice, image workflows and document viewers |
+| Goals and monitoring | Scheduled task primitive | Goals/milestones, dedicated monitors and deduplicated notifications |
+| Multi-instance operation | SQLite same-host / MySQL cross-host; sessions/tasks/schedules coordinated through SQL | Independent file replication and remote Git publication coordination |
+| Whole-stack evolution | Skills/tools/soul/loop/code proposals; detached validation; versioned integration | Held-out quality evaluation, semantic merges, automatic rollout/rollback |
+
+## Product rule
+
+A new capability should have a callable framework API and a usable assistant entry point where applicable. Business-specific integrations should be adapters around the runtime, not embedded into the ReAct loop. Durable task/identity/storage semantics must remain identical across CLI and HTTP use.
+
+## Verification boundary
+
+The automated suite exercises durable runtime contracts on SQLite and MySQL, model/tool behavior using deterministic adapters, a real local MCP server, scaffold startup, API flows and concurrency/recovery. CI also runs a real restricted Docker terminal. It does not prove live LLM task quality, Gmail/calendar integration, interactive browser parity, or a mobile application—those capabilities are not shipped in this release.
+
+## Next alignment milestones
+
+1. Browser worker with persistent sessions and takeover; durable tool-approval workflow.
+2. Token/AG-UI event adapter and a personal activity interface built on the task API.
+3. Native model adapters, personal service/channel connectors, richer document tools.
+4. Task replay evaluation, proposal evidence/scoring and deployment version registry.

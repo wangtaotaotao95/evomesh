@@ -1,8 +1,9 @@
-# Task API replicas share MySQL; each gets an isolated persistent workspace.
+# API replicas and task worker share one owner workspace and MySQL ledger.
 # Source reflection/integration runs on the host Git checkout, not this runtime image.
 x-agent-environment: &agent-environment
   EVOMESH_DATABASE_URL: mysql+pymysql://evomesh:${MYSQL_PASSWORD:?set MYSQL_PASSWORD}@mysql/evomesh?charset=utf8mb4
   EVOMESH_PROJECT: ${EVOMESH_PROJECT:-personal}
+  EVOMESH_OWNER: ${EVOMESH_OWNER:-personal}
   EVOMESH_MODEL: ${EVOMESH_MODEL:?set EVOMESH_MODEL}
   EVOMESH_BASE_URL: ${EVOMESH_BASE_URL:?set EVOMESH_BASE_URL}
   EVOMESH_API_KEY: ${EVOMESH_API_KEY:-}
@@ -34,7 +35,7 @@ services:
       <<: *agent-environment
       EVOMESH_INSTANCE_ID: agent-a
     ports: ["127.0.0.1:8765:8765"]
-    volumes: ["agent-a-data:/data"]
+    volumes: ["personal-data:/data"]
     depends_on:
       init: {condition: service_completed_successfully}
     restart: unless-stopped
@@ -44,11 +45,20 @@ services:
       <<: *agent-environment
       EVOMESH_INSTANCE_ID: agent-b
     ports: ["127.0.0.1:8766:8765"]
-    volumes: ["agent-b-data:/data"]
+    volumes: ["personal-data:/data"]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+  task-worker:
+    build: .
+    environment:
+      <<: *agent-environment
+      EVOMESH_INSTANCE_ID: task-worker
+    command: ["task-worker", "--repo", "/app", "--interval", "1"]
+    volumes: ["personal-data:/data"]
     depends_on:
       init: {condition: service_completed_successfully}
     restart: unless-stopped
 volumes:
   mysql-data:
-  agent-a-data:
-  agent-b-data:
+  personal-data:

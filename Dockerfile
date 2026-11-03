@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir '.[mysql]'
+RUN pip install --no-cache-dir '.[mysql,mcp]'
 COPY SOUL.md ./
 COPY skills ./skills
 RUN useradd --create-home --uid 10001 evomesh && mkdir /data && chown evomesh /data

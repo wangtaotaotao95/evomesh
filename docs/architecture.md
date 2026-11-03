@@ -2,7 +2,7 @@
 
 ## The two loops
 
-The task loop uses a model and registered tools to complete a task. `SOUL.md` and `skills/*/SKILL.md` are loaded at agent construction. The CLI bounds iterations; tools validate JSON Schema arguments. Errors become concise observations without raw task arguments.
+The lower-level `Agent` task loop uses a model and registered tools to complete a task. `SOUL.md` and `skills/*/SKILL.md` are loaded at agent construction. The CLI bounds iterations; tools validate JSON Schema arguments. Errors become concise observations without raw task arguments.
 
 The evolution loop reads recent shared observations, inspects a pinned Git revision, and submits file replacements. A proposal does not execute on submission. Reflection is explicit (`reflect`, `/reflect`) or enabled after task friction (`--auto-reflect`). The current reflector uses the latest 20 project observations; it does not yet track observation consumption or score competing proposals.
 
@@ -65,3 +65,26 @@ Integration updates an unchecked-out `evolution/main` branch. `upgrade` requires
 Tests establish configured properties, not universal improvement. Add task replay, success-rate, latency/cost budgets, and soul-behavior regression checks before autonomous promotion. If candidate code may edit its own tests, run independent held-out evaluation outside that tree. Operator credentials, deployment permissions, and acceptance policy stay outside candidate source.
 
 A worktree isolates file changes, not processes or network access. The checker environment cleanup is not a security sandbox: candidate code can access the host under the runner user's permissions. Treat all instances with proposal access as code contributors; use disposable restricted execution for untrusted code.
+
+
+## v0.2 application runtime
+
+`AgentApp` adds configuration, persistent owner-scoped conversation and memory,
+background tasks, interval schedules, events and tool extensions around `Agent`.
+The CLI and authenticated HTTP API use this same runtime. See [framework guide](framework.md).
+
+New `runtime_*` tables are additive; `evomesh init` creates missing tables without
+altering v0.1 evolution records. Completed conversations retain a bounded number of
+whole turns, including tool results. Session leases prevent concurrent writers.
+Personal data uses project+owner scope; shared evolution observations use project
+scope. The DB itself remains a trusted administrative boundary.
+
+Task claims use CAS and heartbeat leases. Expired execution becomes `interrupted`
+rather than being silently replayed. User retries are explicit. Schedule advancement
+and enqueueing are atomic in one SQL transaction. Task completion and conversation
+save are separate, so crash recovery may require inspecting the last saved turn.
+
+Tools may be local functions, configured plugins or MCP stdio tools. Terminal/web
+capabilities are opt-in. Named delegation uses separate app configurations and a
+bounded thread pool; it is not process isolation. Tool policy and event callbacks
+allow applications to integrate their own control and observability layers.

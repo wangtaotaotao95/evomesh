@@ -1,32 +1,41 @@
 # Roadmap
 
-## v0.1 alpha — implemented
+## v0.1 — shared whole-stack evolution
 
-- [x] Assistant CLI, file tools, soul and skill loading
-- [x] Extensible model/tool/agent interfaces
-- [x] SQLite and MySQL shared observations and proposals
-- [x] Multi-instance task API and Compose example
-- [x] Observation-driven model reflection and source proposals
-- [x] Full-stack text-file evolution, including agent runtime code
-- [x] Periodic validation/integration with lease and Git CAS recovery
-- [x] Explicit version adoption; reproducible offline integration demo
+- [x] Assistant CLI, soul/skill loading and extensible tool loop
+- [x] SQLite/MySQL observations and proposals
+- [x] Source reflection; skill/tool/soul/loop/code changes
+- [x] Periodic integration, validation, conflict detection and crash recovery
+- [x] Explicit version adoption and offline evolution demo
 
-## Next: demonstrate useful evolution
+## v0.2 — assistant and framework use one runtime
 
-- [ ] Task replay dataset with held-out success/cost/latency evaluation
-- [ ] Per-observation lifecycle, proposal evidence and acceptance scores
-- [ ] Strong container/VM validation isolation and resource budgets
-- [ ] Independent acceptance policy and optional review/approval queue
-- [ ] Semantic or three-way merging with conflict-resolution proposals
-- [ ] Persistent personal memory and conversation history
+- [x] `AgentApp`, typed tool decorators, plugins and ready-to-run project templates
+- [x] Owner-scoped memory and bounded persistent conversations/search
+- [x] Durable task queue, progress events, cancellation and explicit retry
+- [x] Multi-worker interval scheduler with atomic task enqueueing
+- [x] Task/session/memory/schedule HTTP APIs and CLI commands
+- [x] Named delegation, bounded team parallelism, async bridge and policy hooks
+- [x] Optional local/Docker terminal, allowlisted web text retrieval
+- [x] Persistent MCP v2 stdio tool discovery/calls
+- [x] Real database/MCP/Docker verification in CI
 
-## Then: operate a fleet
+## Next: richer assistant surfaces without splitting the framework
 
-- [ ] Release registry and per-instance version/health reporting
-- [ ] Canary rollout, automatic rollback and dependency build pipelines
-- [ ] Scheduled reflection and configurable integration batches
-- [ ] Schema migrations and storage adapter contract for more databases
-- [ ] Git remote publishing coordination and multi-host worker fencing
-- [ ] Additional model adapters, streaming, richer tools and integrations
+- [ ] Persistent interactive browser worker and takeover
+- [ ] Durable review/approval flow, pause/resume checkpoints and task plans
+- [ ] Token streaming and AG-UI adapter, personal activity UI
+- [ ] Native provider/channel connectors and OAuth onboarding
+- [ ] Document/PDF/media workflows and personal service adapters
+- [ ] Rich skill management, semantic recall and context compression
 
-A release should report measured outcomes, not call every merged patch an improvement.
+## Next: prove and deploy useful evolution
+
+- [ ] Task replay and held-out success/cost/latency evaluation
+- [ ] Observation lifecycle, proposal evidence and acceptance scoring
+- [ ] Strong isolated candidate validation and independent acceptance policy
+- [ ] Semantic/three-way conflict resolution
+- [ ] Release registry, canary rollout and rollback
+- [ ] General schema migrations, remote Git publication coordination
+
+Use [the capability alignment matrix](alignment.md) to distinguish implemented primitives from full product parity. A merged patch is not automatically a measured improvement.

@@ -4,66 +4,116 @@
 
 **One instance learns. The whole agent evolves.**
 
-A personal assistant and extensible agent framework for **multi-instance, whole-stack self-evolution**.
+A ready-to-run personal assistant **and** a batteries-included agent framework.
+Multi-instance operation. SQLite or MySQL. Evolution across the whole agent stack.
 
 [![CI](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
-![Alpha](https://img.shields.io/badge/status-alpha-orange)
+![Alpha](https://img.shields.io/badge/status-v0.2_alpha-orange)
 
-[中文](README.zh-CN.md) · [Architecture](docs/architecture.md) · [Deployment](docs/deployment.md) · [Roadmap](docs/roadmap.md)
+[中文](README.zh-CN.md) · [Framework guide](docs/framework.md) · [Capability alignment](docs/alignment.md) · [Deployment](docs/deployment.md)
 
 </div>
 
-Agent friction can come from anywhere: a weak skill, a missing tool, an unhelpful soul, a brittle ReAct loop, or a single line of implementation code. EvoMesh treats all of those as evolvable source artifacts.
+Agent friction can come from a skill, a missing tool, its soul, the ReAct loop, or any line of implementation code. EvoMesh records that friction, generates source-change proposals, shares them across instances through SQL, and periodically validates and integrates them into a versioned Git branch.
 
-Each instance records observations and proposes changes to a shared SQL ledger. An integration worker periodically claims proposals, checks conflicts, validates them in a detached Git worktree, and advances a versioned evolution branch. Instances adopt a validated revision between runs.
+The assistant and framework use **the same `AgentApp` runtime**. Memory, conversations, tools, background tasks, schedules, delegation, and evolution are reusable APIs, not features trapped inside a CLI.
 
-**Alpha, not a production autonomy claim.** The execution, proposal, validation, integration, and explicit upgrade paths work. Real-world improvement quality depends on your model and validation suite. Automated fleet rollout, semantic conflict resolution, strong execution sandboxing, and durable conversation memory are future work.
+**v0.2 is an alpha, not full Hermes/OpenMuse parity.** It adds durable application capabilities to v0.1's evolution engine. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
 
-## What works today
+## Two ways to start
 
-| Capability | Implementation |
-|---|---|
-| Personal assistant | CLI chat, file tools, `SOUL.md`, skill loading, compatible model endpoint |
-| Framework | `Agent`, `Tool`, `Model` protocol, SQL ledger, integration API |
-| Multi-instance operation | Authenticated task API, per-instance IDs, shared project ledger |
-| Storage | SQLite with WAL for one host; MySQL with PyMySQL for multiple hosts |
-| Observe → propose | Tool failures, step limits, explicit feedback; model-driven source inspection and proposals |
-| Whole-stack changes | Skill, tool, soul, loop, or other tracked UTF-8 code; add/update/delete |
-| Periodic integration | Worker interval, duplicate suppression, leases, heartbeats, conflict detection |
-| Validation and recovery | Operator-supplied checks, timeout, atomic Git ref update, commit recovery |
-| Version adoption | Explicit clean-checkout fast-forward and restart |
-
-## Start in a minute
-
-Requires Python 3.11+ and Git. Run from a source checkout for self-evolution.
+Requires Python 3.11+ and Git. Currently installed from source; no PyPI publication is implied.
 
 ```bash
 git clone https://github.com/wangtaotaotao95/evomesh.git
 cd evomesh
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e '.[dev]'
-evomesh init
-evomesh run --demo 'List my workspace'
-python examples/evolution_demo.py
+pip install -e '.[dev,mysql,mcp]'
 ```
 
-The offline demo uses no API key and no paid inference. `--demo` is a deterministic file-listing smoke test. `evolution_demo.py` proves two instances can contribute a soul change and a tool change, validate both, and upgrade a disposable agent repository.
-
-For an actual assistant, configure a tool-capable Chat Completions-compatible endpoint:
+**Personal assistant:**
 
 ```bash
-export EVOMESH_BASE_URL='https://your-provider.example/v1'
-export EVOMESH_MODEL='your-tool-capable-model'
-export EVOMESH_API_KEY='your-key'
-evomesh chat
-# Or one task; extra reflection calls happen only after observed friction:
-evomesh run --auto-reflect 'Organize my notes in the workspace'
+evomesh new ../my-assistant --template assistant
+cd ../my-assistant
+evomesh chat --session main
 ```
 
-Model name and base URL are deliberately explicit. Compatibility varies by provider/model; no hosted-model compatibility or quality benchmark is claimed. `ChatModel` uses the [Chat Completions tool-call format](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create). You can replace it with any implementation of the `Model` protocol.
+**Agent framework:**
+
+```bash
+evomesh new ../my-agent --template framework
+cd ../my-agent
+python app.py
+```
+
+Both generated projects run immediately using a deterministic offline demo, with no model key. The demo lists workspace files; it is not a real LLM. For real reasoning, set `demo = false` in `evomesh.toml`, then configure a tool-capable endpoint:
+
+```bash
+export EVOMESH_MODEL='your-tool-capable-model'
+export EVOMESH_BASE_URL='https://your-provider.example/v1'
+export EVOMESH_API_KEY='your-key'
+evomesh chat --session main
+```
+
+Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use `evomesh --config /path/to/evomesh.toml ...`. Relative paths in that file resolve against its directory. [Configuration example](evomesh.example.toml).
+
+## What you can use
+
+| Capability | Personal assistant | Framework API |
+|---|---|---|
+| Durable conversations | `chat --session main`, `session show/list --query` | `app.run(..., session=...)`, owner-scoped history |
+| Personal memory | `remember/recall/forget` tools; `memory` commands | `app.state.remember/recall/forget` |
+| File tools, soul, skills | Loaded from workspace/source config | Normal `Tool` objects and configurable `Agent` |
+| Background tasks | `task submit/show/cancel/retry/events` | `app.submit`, `app.work_once`, durable task state |
+| Recurring work | `schedule add --every 3600`; task worker | Transactional schedule tick → task queue |
+| Progress and control | `run --events`, task event receipts | Event callbacks, cancellation, tool policy hooks |
+| Terminal | Opt-in local or restricted Docker backend | `terminal_tool` |
+| Public web reading | Explicit HTTPS host allowlist | `web_tool`; text extraction, no JS browser |
+| MCP tools | Configured trusted stdio servers | Persistent `MCPConnection`, namespaced `Tool` objects |
+| Custom integrations | Trusted plugin modules | `@tool`, `app.register`, replaceable `Model` |
+| Delegation | Can expose named specialist apps as a tool | `Team.run`, `Team.as_tool`, bounded parallel work |
+| Multi-instance deployment | Task API replicas + workers + MySQL | The same runtime, with SQL leases and namespaces |
+| Whole-stack evolution | `reflect`, `worker`, `upgrade` | Source proposals, `Integrator`, Git publication |
+
+## Framework in a few lines
+
+```python
+from evomesh import AgentApp, tool
+
+
+@tool
+def word_count(text: str) -> int:
+    """Count words."""
+    return len(text.split())
+
+
+with AgentApp.from_config("evomesh.toml", tools=[word_count]) as app:
+    app.state.remember("tone", "Prefer concise answers")
+    answer = app.run("Help me organize my notes", session="main")
+    task_id = app.submit("List workspace files", key="list-request-1")
+    app.work_once()
+    print(app.state.task(task_id))
+```
+
+Use `await app.arun(...)` in asynchronous applications. `Agent` remains the lightweight, in-process building block; `AgentApp` adds configuration, persistence, default tools and task orchestration. See [framework guide](docs/framework.md), [offline example](examples/framework_app.py), and [team example](examples/team.py).
+
+## Work that keeps going
+
+```bash
+evomesh task submit 'Summarize the notes in my workspace' --session research --key notes-1
+evomesh task-worker                  # Keep running in another terminal.
+evomesh task list
+evomesh task events TASK_ID
+evomesh task cancel TASK_ID          # Stops subsequent steps, not an in-flight external action.
+evomesh task retry TASK_ID           # Explicit retry after checking earlier effects.
+evomesh schedule add 'Review my notes' --every 3600
+```
+
+Tasks, results, events, schedules, memory and completed conversation turns persist in SQL. The task worker must stay running. Expired worker leases mark tasks `interrupted`; unknown external effects are **not automatically replayed**. Schedules coalesce missed intervals into one task, with atomic enqueueing across workers.
 
 ## The evolution loop
 
@@ -71,105 +121,78 @@ Model name and base URL are deliberately explicit. Compatibility varies by provi
 flowchart LR
     A[Instance A] --> O[Shared observations]
     B[Instance B] --> O
-    O --> R[Inspect source and reflect]
+    O --> R[Source inspection and reflection]
     R --> P[(SQL proposal ledger)]
     P --> W[Periodic integration worker]
     W --> V[Conflict check and validation]
     V -->|pass| G[Versioned evolution branch]
-    V -->|fail| F[Rejected or conflict report]
+    V -->|fail| F[Rejection or conflict report]
     G --> U[Explicit upgrade and restart]
     U --> A
     U --> B
 ```
 
+From an agent **source Git checkout**:
+
 ```bash
-# Record feedback and let a model inspect source and generate a proposal.
-evomesh observe 'The assistant repeatedly forgets to summarize saved files'
+evomesh observe 'The assistant forgets to summarize saved files'
 evomesh reflect --repo .
 evomesh proposals
-
-# Validate and integrate one proposal. The checker runs inside the candidate tree.
 evomesh integrate --repo . --check 'python -m pytest -q'
-
-# Or keep processing one proposal per interval.
+# Or continuously process proposals:
 evomesh worker --repo . --interval 60 --check 'python -m pytest -q'
-
-# Inspect the result, then adopt it between runs.
 git diff main..evolution/main
 evomesh upgrade --repo .
-# Restart the agent; reinstall dependencies if they changed.
 ```
 
-The integration branch defaults to `evolution/main` and must not be checked out. The currently running checkout stays unchanged until `upgrade`. Checks run with candidate `src/` first on `PYTHONPATH`, so tests exercise proposed Python changes, not the previously installed source.
+Skills, tools, soul, runtime loop and other tracked UTF-8 code may change. The integration worker uses detached worktrees, lease renewal, file hashes, operator checks, Git compare-and-swap and crash recovery. Running instances adopt code between runs; no mid-turn module replacement. `task-worker` executes user tasks; `worker` integrates evolution proposals.
 
-Changes to different files can accumulate from an older base. A second change to an already-modified file is marked `conflict`; the alpha does not guess a semantic merge. See [architecture](docs/architecture.md) for recovery and consistency boundaries.
+Generated projects need Git initialization and committed source before reflection. To evolve EvoMesh itself, point `repo` to its source checkout; changing a generated app does not rewrite an installed dependency. [Architecture and consistency contract](docs/architecture.md).
 
-## Deploy multiple instances
+## Deploy or expose an API
 
 ```bash
-pip install -e '.[dev,mysql]'
-export EVOMESH_DATABASE_URL='mysql+pymysql://user:password@host/evomesh?charset=utf8mb4'
-export EVOMESH_PROJECT='my-agent'
-evomesh init  # Once, before replicas start.
+evomesh init
 export EVOMESH_SERVER_TOKEN='a-long-random-secret'
-EVOMESH_INSTANCE_ID=laptop evomesh serve --port 8765
-# On another machine with the same DB/project and its own workspace:
-# EVOMESH_INSTANCE_ID=server evomesh serve --port 8765
+evomesh serve --port 8765
+# Run separately for background tasks and schedules:
+evomesh task-worker
 ```
 
-`POST /run` accepts `{"task":"..."}` with `Authorization: Bearer <token>`. Each request starts a fresh conversation; CLI chat retains history only in process. The API is a small deployment primitive, not a complete web product.
+Authenticated API includes `/run`, `/tasks`, task events/cancel/retry, `/sessions`, `/memory`, and `/schedules`. It uses one server-configured owner, not an owner supplied by the caller. [API reference](docs/api.md).
 
-[Docker Compose](compose.yaml) includes MySQL and two task API instances. Read [deployment instructions](docs/deployment.md) for storage, reflection, a central integration worker, rollout, and rollback.
-
-## Build on EvoMesh
-
-```python
-from evomesh import Agent, Store, Tool
-from evomesh.models import ChatModel
-from evomesh.tools import object_schema
-
-store = Store("sqlite:///agent.db")
-store.initialize()
-tool = Tool(
-    "word_count",
-    "Count words.",
-    object_schema({"text": {"type": "string"}}),
-    lambda text: {"words": len(text.split())},
-)
-# Supply your provider's model ID and base URL:
-model = ChatModel(model="your-model", base_url="https://your-provider.example/v1")
-agent = Agent(model, store, [tool], project="my-agent", instance="worker-1")
-# answer = agent.run('Count the words in: learn from experience')
-```
-
-See [custom_agent.py](examples/custom_agent.py) for a complete environment-configured example. Tools and model adapters are normal Python objects; you can subclass the runtime loop, customize the soul, or submit proposals from your own evaluation pipeline.
-
-## Scope and trust
-
-- SQLite is for processes on the **same host**, not a shared database over NFS. Use MySQL for cross-host instances.
-- Instances share observations/proposals through SQL; workspaces and personal files are not replicated.
-- Integration workers share **one canonical Git repository**. Independent clones must not publish the same integration branch concurrently.
-- A detached worktree is **not an OS security sandbox**. Candidate tests execute code. Run untrusted proposals in a disposable, restricted environment and use an external evaluator before deployment.
-- No generic shell tool is exposed to the assistant. Custom tools determine its additional capabilities.
-- Raw conversations are not persisted by default. Explicit observations and model-written proposals can still contain sensitive data; connect only trusted instances and configure database access appropriately.
-
-## Related work
-
-Inspired by the learning loop in [Hermes Agent](https://github.com/NousResearch/hermes-agent). Its [self-evolution project](https://github.com/NousResearch/hermes-agent-self-evolution) also describes expansion from skills to prompts, tools, and code. EvoMesh focuses on **shared SQL evolution records, multi-instance contributions, and versioned integration** rather than claiming that other projects can only evolve skills.
-
-This repository is an independent project and is not affiliated with other projects named EvoMesh.
-
-## Contribute
+For a MySQL deployment with two API replicas and a task worker:
 
 ```bash
-pip install -e '.[dev,mysql]'
+cp .env.example .env
+# Fill in model endpoint, keys, tokens and database passwords.
+docker compose up --build -d
+```
+
+SQLite supports multiple processes on **one host**. MySQL supports cross-host workers. Same-owner replicas need the same workspace/filesystem view; SQL shares records, not file bytes. Integration processes use one canonical Git repository. [Deployment and upgrade guide](docs/deployment.md).
+
+## Trust and current limits
+
+- Persistence is private application data: `AgentApp` saves completed conversations and tool results. Protect the database; owner namespaces are not database-level tenant isolation. Low-level `Agent` remains in-memory.
+- Local terminal and MCP servers execute trusted code with host-user permissions. Docker terminal is opt-in, nonroot, network-disabled, resource-limited, and mounts the workspace read-only. It is not an interactive desktop.
+- The web tool reads allowlisted text pages. It does not perform browser login, JS execution or takeover; DNS preflight is not a substitute for an egress firewall.
+- Detached worktrees are not an OS sandbox. Candidate tests execute code. Use restricted runners and independent evaluation before deploying untrusted proposals.
+- Tests validate behavior and consistency, not whether model-written changes improve real task outcomes. Live-provider quality and autonomy benchmarks are not claimed.
+
+## Development and related work
+
+```bash
+pip install -e '.[dev,mysql,mcp]'
 ruff check .
 ruff format --check .
 pytest -q
-# Optional: exercise the same suite against an empty, disposable MySQL database.
-EVOMESH_TEST_DATABASE_URL='mysql+pymysql://user:password@localhost/evomesh_test' pytest -q
+python examples/evolution_demo.py
+python examples/framework_app.py
+python examples/team.py
 ```
 
-CI runs SQLite on Python 3.11–3.13, the test suite against MySQL 8.4, package builds, and a Docker build. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [roadmap](docs/roadmap.md).
+CI covers SQLite/Python 3.11–3.13, the same suite against real MySQL 8.4, actual MCP subprocesses, package/image builds, and a Docker terminal check. See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md), and [roadmap](docs/roadmap.md).
 
-MIT licensed. Source distribution name: `evomesh-agent`; import and command: `evomesh`. No PyPI publication is implied.
+Inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent) and [OpenMuse](https://github.com/CopilotKit/OpenMuse). EvoMesh's focus is shared whole-stack evolution delivered through both a usable assistant and a reusable framework. This independent repository is not affiliated with other projects named EvoMesh.
+
+MIT. Distribution name: `evomesh-agent`; import and command: `evomesh`.

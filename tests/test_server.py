@@ -62,3 +62,53 @@ def test_failed_api_task_can_still_generate_evolution_proposal():
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_durable_api_task_roundtrip_and_private_routes(store, project, tmp_path):
+    from evomesh import AgentApp, Config
+
+    app = AgentApp(
+        Config(project=project, workspace=tmp_path / "workspace", repo=tmp_path, demo=True),
+        store=store,
+        initialize=False,
+    )
+    server = create_server("127.0.0.1", 0, "secret", app.agent, app=app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(
+            base_url=f"http://127.0.0.1:{server.server_port}", trust_env=False
+        ) as client:
+            for path in ("/tasks", "/sessions", "/memory", "/schedules"):
+                assert client.get(path).status_code == 401
+            client.headers["Authorization"] = "Bearer secret"
+            first = client.post("/run", json={"task": "List files", "session": "main"})
+            assert first.status_code == 200
+            assert first.json()["session"] == "main"
+            assert len(client.get("/sessions/main").json()) == 4
+            response = client.post("/tasks", json={"task": "List files", "key": "one"})
+            assert response.status_code == 202
+            identifier = response.json()["id"]
+            assert app.work_once()["status"] == "succeeded"
+            result = client.get(f"/tasks/{identifier}").json()
+            assert result["status"] == "succeeded"
+            assert "token" not in result
+            assert client.get(f"/tasks/{identifier}/events").json()
+            assert (
+                client.post("/memory", json={"key": "tone", "content": "Concise"}).status_code
+                == 200
+            )
+            assert client.get("/memory").json()[0]["content"] == "Concise"
+            schedule = client.post(
+                "/schedules", json={"task": "Check files", "interval_seconds": 60}
+            )
+            assert schedule.status_code == 200
+            assert client.post(f"/schedules/{schedule.json()['id']}/disable", json={}).json()[
+                "changed"
+            ]
+            assert client.post("/tasks", json={"task": []}).status_code == 400
+            assert client.get("/tasks/missing").status_code == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

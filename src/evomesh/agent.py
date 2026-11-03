@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from .evolution import git, make_change, revision, source_file, submit
@@ -17,6 +18,10 @@ Use feedback and observed friction to propose testable improvements.
 """
 
 
+class RunCancelled(RuntimeError):
+    pass
+
+
 class Agent:
     def __init__(
         self,
@@ -29,6 +34,9 @@ class Agent:
         soul: str = DEFAULT_SOUL,
         max_steps: int = 12,
         repo: Path | None = None,
+        on_event: Callable[[dict], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
+        before_tool: Callable[[str, dict], bool] | None = None,
     ):
         if max_steps < 1:
             raise ValueError("max_steps must be positive")
@@ -39,6 +47,9 @@ class Agent:
         self.soul, self.max_steps, self.repo = soul, max_steps, repo
         self.history: list[dict] = []
         self.last_observations: list[str] = []
+        self.on_event = on_event or (lambda event: None)
+        self.cancelled = cancelled or (lambda: False)
+        self.before_tool = before_tool
 
     def observe(self, kind: str, detail: str) -> str:
         identifier = self.store.observe(self.project, self.instance, kind, detail)
@@ -46,7 +57,7 @@ class Agent:
         return identifier
 
     def run(self, task: str) -> str:
-        """Conversation state stays in this object; raw chats are not stored in SQL."""
+        """Run a turn; AgentApp optionally persists completed turns and tool receipts."""
         self.last_observations = []
         messages = [
             {"role": "system", "content": self.soul},
@@ -54,20 +65,36 @@ class Agent:
             {"role": "user", "content": task},
         ]
         try:
-            for _ in range(self.max_steps):
+            self.on_event({"kind": "run_started"})
+            for step in range(self.max_steps):
+                if self.cancelled():
+                    raise RunCancelled("Run cancelled between steps")
+                self.on_event({"kind": "model_started", "step": step})
                 message = self.model.complete(messages, [t.schema() for t in self.tools.values()])
+                if self.cancelled():
+                    raise RunCancelled("Run cancelled after inference")
                 calls = message.get("tool_calls") or []
                 messages.append(message)
                 if not calls:
                     answer = message.get("content") or ""
                     # Keep complete turns only. A failed run never leaves orphan tool messages.
                     self.history = messages[1:]
+                    self.on_event({"kind": "run_completed"})
                     return answer
                 for call in calls:
+                    if self.cancelled():
+                        raise RunCancelled("Run cancelled between tools")
                     name = call["function"]["name"]
+                    self.on_event({"kind": "tool_started", "tool": name})
+                    outcome = "ok"
                     try:
+                        if self.before_tool is not None and not self.before_tool(
+                            name, json.loads(call["function"]["arguments"])
+                        ):
+                            raise PermissionError("Tool denied by application policy")
                         output = self.tools[name].invoke(call["function"]["arguments"])
                     except Exception as exc:
+                        outcome = "error"
                         # Don't put raw arguments, file contents or exception text in the ledger.
                         self.observe("tool_error", f"tool={name}; error={type(exc).__name__}")
                         output = json.dumps(
@@ -76,12 +103,17 @@ class Agent:
                                 "hint": "Check tool arguments and workspace paths.",
                             }
                         )
+                    self.on_event({"kind": "tool_completed", "tool": name, "outcome": outcome})
                     messages.append(
                         {"role": "tool", "tool_call_id": call["id"], "content": output[:20000]}
                     )
             self.observe("step_limit", f"Tool loop exhausted max_steps={self.max_steps}")
             raise RuntimeError("Agent step limit reached; friction recorded")
+        except RunCancelled:
+            self.on_event({"kind": "run_cancelled"})
+            raise
         except Exception as exc:
+            self.on_event({"kind": "run_failed", "error": type(exc).__name__})
             if not self.last_observations:
                 self.observe("run_error", f"error={type(exc).__name__}")
             raise

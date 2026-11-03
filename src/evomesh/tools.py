@@ -101,3 +101,55 @@ def workspace_tools(root: Path) -> list[Tool]:
             list_files,
         ),
     ]
+
+
+def tool(function=None, *, name: str | None = None, description: str | None = None):
+    """Turn an annotated function into a Tool, without hand-writing JSON Schema.
+
+    Supports scalar types, lists, dictionaries, Literal, and unions/Optional.
+    Explicit Tool(...) remains available for more complex schemas.
+    """
+    import inspect
+    import types
+    from typing import Literal, Union, get_args, get_origin, get_type_hints
+
+    def schema(annotation):
+        scalars = {
+            str: "string",
+            int: "integer",
+            float: "number",
+            bool: "boolean",
+            type(None): "null",
+        }
+        if annotation in scalars:
+            return {"type": scalars[annotation]}
+        origin, args = get_origin(annotation), get_args(annotation)
+        if origin is Literal:
+            return {"enum": list(args)}
+        if origin in (Union, types.UnionType):
+            return {"anyOf": [schema(a) for a in args]}
+        if origin is list and len(args) == 1:
+            return {"type": "array", "items": schema(args[0])}
+        if origin is dict and args[0] is str:
+            return {"type": "object", "additionalProperties": schema(args[1])}
+        raise TypeError(f"Unsupported tool annotation: {annotation!r}; use explicit Tool schema")
+
+    def decorate(fn):
+        if inspect.iscoroutinefunction(fn):
+            raise TypeError("Tool handlers must be synchronous; use AgentApp.arun for async apps")
+        properties, required = {}, []
+        hints = get_type_hints(fn)
+        for parameter in inspect.signature(fn).parameters.values():
+            if parameter.kind not in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY):
+                raise TypeError("Tool handlers require named parameters")
+            properties[parameter.name] = schema(hints.get(parameter.name))
+            if parameter.default is parameter.empty:
+                required.append(parameter.name)
+        return Tool(
+            name or fn.__name__,
+            description or inspect.getdoc(fn) or fn.__name__,
+            object_schema(properties, required),
+            fn,
+        )
+
+    return decorate(function) if function is not None else decorate
