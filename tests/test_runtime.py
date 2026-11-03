@@ -103,10 +103,10 @@ def test_task_deduplication_and_owner_isolation(store, project):
 
 def test_multiple_workers_execute_distinct_tasks(store, project, tmp_path):
     a, b = app_for(store, project, tmp_path), app_for(store, project, tmp_path)
-    ids = [a.submit(f"task-{i}") for i in range(6)]
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda i: (a if i % 2 else b).work_once(), range(6)))
-    assert len({r["id"] for r in results}) == 6
+    ids = [a.submit(f"task-{i}") for i in range(24)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda i: (a if i % 2 else b).work_once(), range(24)))
+    assert len({r["id"] for r in results}) == 24
     assert {a.state.task(i)["status"] for i in ids} == {"succeeded"}
     assert all(a.state.task_events(i)[0]["kind"] == "run_started" for i in ids)
     assert all(a.state.task(i)["attempts"] == 1 for i in ids)
@@ -215,3 +215,30 @@ def test_async_bridge(store, project, tmp_path):
     app = app_for(store, project, tmp_path)
     assert asyncio.run(app.arun("hello", session="async")) == "hello"
     assert app.state.session("async")
+
+
+def test_completion_retries_only_rolled_back_database_transaction(store, project):
+    from sqlalchemy import event
+    from sqlalchemy.exc import OperationalError
+
+    state = RuntimeStore(store, project)
+    identifier = state.submit("already executed")
+    row = state.claim_task()
+    attempts = []
+
+    def fail_once(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith("UPDATE runtime_tasks SET status=CASE"):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise OperationalError(statement, parameters, Exception(1213, "simulated deadlock"))
+
+    event.listen(store.engine, "before_cursor_execute", fail_once)
+    try:
+        assert (
+            state.finish_task(identifier, row["token"], "succeeded", "saved output") == "succeeded"
+        )
+    finally:
+        event.remove(store.engine, "before_cursor_execute", fail_once)
+    assert len(attempts) == 2
+    assert state.task(identifier)["attempts"] == 1
+    assert state.task(identifier)["result"] == "saved output"

@@ -6,6 +6,7 @@ import hashlib
 import json
 import time
 import uuid
+from functools import wraps
 
 from sqlalchemy import (
     Column,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Table,
     Text,
     and_,
+    case,
     delete,
     insert,
     or_,
@@ -24,7 +26,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.mysql import LONGTEXT
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .store import LeaseLost, Store
 
@@ -116,6 +118,24 @@ def rowdict(row):
     return dict(row) if row else None
 
 
+def retry_deadlock(function):
+    """Retry only known rolled-back SQL transactions, never model/tool execution."""
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        for attempt in range(5):
+            try:
+                return function(*args, **kwargs)
+            except OperationalError as exc:
+                # MySQL 1213 rolls back the entire transaction. Other errors may
+                # have ambiguous outcomes and must not be automatically replayed.
+                if not exc.orig.args or exc.orig.args[0] != 1213 or attempt == 4:
+                    raise
+                time.sleep(0.01 * (2**attempt))
+
+    return wrapped
+
+
 class SessionBusy(RuntimeError):
     pass
 
@@ -172,6 +192,7 @@ class RuntimeStore:
             ).scalar_one()
         return token, json.loads(history)
 
+    @retry_deadlock
     def renew_session(self, name: str, token: str, ttl: float = 120):
         now = time.time()
         with self.engine.begin() as conn:
@@ -187,6 +208,7 @@ class RuntimeStore:
             if result.rowcount != 1:
                 raise LeaseLost("Session lease lost")
 
+    @retry_deadlock
     def release_session(self, name: str, token: str, history: list[dict] | None = None):
         values = {"token": None, "lease_until": None}
         if history is not None:
@@ -344,23 +366,22 @@ class RuntimeStore:
 
     def claim_task(self, ttl: float = 120) -> dict | None:
         now = time.time()
-        # Never automatically replay unknown tool side effects after a crash.
-        with self.engine.begin() as conn:
-            conn.execute(
-                update(tasks)
-                .where(
-                    self.scope(tasks),
-                    tasks.c.status.in_(["running", "cancelling"]),
-                    tasks.c.lease_until < now,
-                )
-                .values(
-                    status="interrupted",
-                    token=None,
-                    lease_until=None,
-                    error="Worker lease expired; inspect effects before retry",
-                    updated_at=now,
-                )
+        # Discover without locks, then CAS by primary key. A broad UPDATE through
+        # the status index can deadlock with a completion moving that index entry.
+        with self.engine.connect() as conn:
+            expired = list(
+                conn.execute(
+                    select(tasks.c.id)
+                    .where(
+                        self.scope(tasks),
+                        tasks.c.status.in_(["running", "cancelling"]),
+                        tasks.c.lease_until < now,
+                    )
+                    .limit(100)
+                ).scalars()
             )
+        for identifier in expired:
+            self._interrupt_expired(identifier, now)
         with self.engine.connect() as conn:
             ids = list(
                 conn.execute(
@@ -374,30 +395,58 @@ class RuntimeStore:
                 ).scalars()
             )
         for identifier in ids:
-            with self.engine.begin() as conn:
-                result = conn.execute(
-                    update(tasks)
-                    .where(tasks.c.id == identifier, tasks.c.status == "queued")
-                    .values(
-                        status="running",
-                        token=str(uuid.uuid4()),
-                        lease_until=time.time() + ttl,
-                        attempts=tasks.c.attempts + 1,
-                        updated_at=time.time(),
-                    )
-                )
-                if result.rowcount == 1:
-                    return dict(
-                        conn.execute(
-                            select(tasks).where(
-                                tasks.c.id == identifier,
-                            )
-                        )
-                        .mappings()
-                        .one()
-                    )
+            row = self._claim_id(identifier, ttl)
+            if row is not None:
+                return row
         return None
 
+    @retry_deadlock
+    def _interrupt_expired(self, identifier: str, now: float):
+        with self.engine.begin() as conn:
+            conn.execute(
+                update(tasks)
+                .where(
+                    tasks.c.id == identifier,
+                    self.scope(tasks),
+                    tasks.c.status.in_(["running", "cancelling"]),
+                    tasks.c.lease_until < now,
+                )
+                .values(
+                    status="interrupted",
+                    token=None,
+                    lease_until=None,
+                    error="Worker lease expired; inspect effects before retry",
+                    updated_at=now,
+                )
+            )
+
+    @retry_deadlock
+    def _claim_id(self, identifier: str, ttl: float):
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                update(tasks)
+                .where(tasks.c.id == identifier, self.scope(tasks), tasks.c.status == "queued")
+                .values(
+                    status="running",
+                    token=str(uuid.uuid4()),
+                    lease_until=time.time() + ttl,
+                    attempts=tasks.c.attempts + 1,
+                    updated_at=time.time(),
+                )
+            )
+            if result.rowcount == 1:
+                return dict(
+                    conn.execute(
+                        select(tasks).where(
+                            tasks.c.id == identifier,
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+        return None
+
+    @retry_deadlock
     def renew_task(self, identifier: str, token: str, ttl: float = 120):
         with self.engine.begin() as conn:
             result = conn.execute(
@@ -414,6 +463,7 @@ class RuntimeStore:
             if result.rowcount != 1:
                 raise LeaseLost("Task lease lost")
 
+    @retry_deadlock
     def finish_task(self, identifier: str, token: str, status: str, result=None, error=None):
         if status not in {"succeeded", "failed", "cancelled", "queued"}:
             raise ValueError("Invalid task status")
@@ -425,21 +475,28 @@ class RuntimeStore:
                 tasks.c.lease_until > time.time(),
                 tasks.c.status.in_(["running", "cancelling"]),
             )
-            # Serialize cancellation with completion. Cancellation wins while in flight.
-            changed = conn.execute(update(tasks).where(owned).values(updated_at=time.time()))
+            # One conditional write serializes cancellation with completion.
+            changed = conn.execute(
+                update(tasks)
+                .where(owned)
+                .values(
+                    status=case((tasks.c.status == "cancelling", "cancelled"), else_=status),
+                    result=result,
+                    error=error,
+                    token=None,
+                    lease_until=None,
+                    updated_at=time.time(),
+                )
+            )
             if changed.rowcount != 1:
                 raise LeaseLost("Task lease lost")
-            current = conn.execute(
-                select(tasks.c.status).where(tasks.c.id == identifier)
+            return conn.execute(
+                select(tasks.c.status).where(
+                    tasks.c.id == identifier,
+                )
             ).scalar_one()
-            final = "cancelled" if current == "cancelling" else status
-            conn.execute(
-                update(tasks)
-                .where(tasks.c.id == identifier)
-                .values(status=final, result=result, error=error, token=None, lease_until=None)
-            )
-            return final
 
+    @retry_deadlock
     def cancel_task(self, identifier: str) -> bool:
         with self.engine.begin() as conn:
             for old, new in (("queued", "cancelled"), ("running", "cancelling")):
@@ -451,6 +508,7 @@ class RuntimeStore:
                     return True
         return False
 
+    @retry_deadlock
     def retry_task(self, identifier: str) -> bool:
         with self.engine.begin() as conn:
             return bool(
