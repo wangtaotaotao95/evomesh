@@ -10,7 +10,7 @@ Agent 的不流畅可能来自 skill、tool、soul、ReAct 循环或任意源码
 
 **个人助手与开发框架共用 `AgentApp`，不是两个分叉产品。** 记忆、会话、工具、后台任务、定时任务、委派和进化都可以通过 Python API 复用。
 
-当前为 **v0.2 alpha**。本版补齐了持久会话、记忆、任务运行时和框架入口；不宣称已经完整达到 Hermes/OpenMuse 的产品成熟度。浏览器接管、移动端、邮件日历渠道、模型 token 流式输出和自动集群发布等仍有差距，详见[逐项对齐表](docs/alignment.md)。
+当前为 **v0.3 alpha**。本版增加了飞书/钉钉/Telegram 连接和内置 Web 控制台，继续共用持久任务运行时和框架入口；不宣称已经完整达到 Hermes/OpenMuse 的产品成熟度。浏览器接管、移动端、邮件日历渠道、模型 token 流式输出和自动集群发布等仍有差距，详见[逐项对齐表](docs/alignment.md)。
 
 ## 安装后，两种用法
 
@@ -27,7 +27,8 @@ pip install -e '.[dev,mysql,mcp]'
 ```bash
 evomesh new ../my-assistant --template assistant
 cd ../my-assistant
-evomesh chat --session main
+evomesh console  # 打开 http://127.0.0.1:8765，用终端令牌登录
+# 或 evomesh chat --session main
 ```
 
 **开箱即用的框架项目：**
@@ -154,3 +155,16 @@ API 支持同步任务、后台任务、事件、取消/重试、会话、记忆
 CI 覆盖 SQLite、真实 MySQL 8.4、Python 3.11–3.13、实际 MCP 子进程、安装包、Docker 构建及 Docker 终端验证。尚未宣称真实模型任务质量提升，也没有完成全自动集群发布或强隔离的进化验证沙箱。
 
 参考 Hermes 的经验学习与自动化、OpenMuse 的持久任务与可见过程，持续推进能力对齐。MIT 协议，分发名 `evomesh-agent`，命令和导入名 `evomesh`，目前从源码安装，未发布到 PyPI。
+
+## v0.3：消息渠道与 Web 控制台
+
+- **飞书 / Lark、钉钉、Telegram**：文本消息接收和原会话回复，签名/密钥校验，可信发送者及群聊名单。
+- **持久化收件与回复**：回调去重、原子创建任务、多个工作进程协调回复；失败或状态不确定时由操作者手动重试。
+- **Web 控制台**：运行概览、持久会话、任务事件/取消/重试、长期记忆、周期任务、渠道状态与接入配置、进化反馈和提案。
+- **框架入口**：`ChannelHub.register()` 支持自定义渠道；`create_server(..., app=app, with_worker=True)` 将你的 `AgentApp` 暴露为同一套控制台和 API。
+
+`evomesh console` 自动初始化新增表并启动内置工作进程；部署时仍可使用 `serve` + `task-worker` 分离运行。现有用户更新后先执行一次 `evomesh init`。
+
+渠道配置通过 TOML 和环境变量管理，控制台展示接入配置与运行状态。当前不含附件、语音、平台 OAuth 引导或 token 流式输出。自动化测试使用平台协议模拟；真实应用凭据需自行配置并联调。
+
+[控制台指南](docs/console.md) · [渠道接入指南](docs/channels.md) · [配置示例](evomesh.channels.example.toml)

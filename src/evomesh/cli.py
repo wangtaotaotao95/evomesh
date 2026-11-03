@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import shlex
 import sys
 import time
@@ -30,16 +31,17 @@ def parser() -> argparse.ArgumentParser:
     new = commands.add_parser("new", help="Create a ready-to-run assistant or framework project")
     new.add_argument("destination", type=Path)
     new.add_argument("--template", choices=["assistant", "framework"], default="assistant")
-    for name in ("run", "chat", "reflect", "serve", "task-worker"):
+    for name in ("run", "chat", "reflect", "serve", "console", "task-worker"):
         sub = commands.add_parser(name)
         if name == "run":
             sub.add_argument("task")
         if name in {"run", "chat"}:
             sub.add_argument("--session", default="main" if name == "chat" else None)
             sub.add_argument("--events", action="store_true")
-        if name == "serve":
+        if name in {"serve", "console"}:
             sub.add_argument("--host", default="127.0.0.1")
             sub.add_argument("--port", type=int, default=8765)
+            sub.add_argument("--with-worker", action="store_true")
         if name == "task-worker":
             sub.add_argument("--once", action="store_true")
             sub.add_argument("--interval", type=float, default=1)
@@ -125,7 +127,7 @@ def dispatch(args, store: Store, cfg: Config) -> None:
     if args.command == "init":
         store.initialize()
         print("Evolution and application storage initialized.")
-    elif args.command in {"run", "chat", "reflect", "serve", "task-worker"}:
+    elif args.command in {"run", "chat", "reflect", "serve", "console", "task-worker"}:
         app = AgentApp(
             cfg,
             store=store,
@@ -135,13 +137,26 @@ def dispatch(args, store: Store, cfg: Config) -> None:
             else None,
         )
         try:
-            if args.command == "serve":
+            if args.command in {"serve", "console"}:
                 from .server import create_server
 
+                token = os.getenv("EVOMESH_SERVER_TOKEN", "")
+                if (
+                    not token
+                    and args.command == "console"
+                    and args.host in {"127.0.0.1", "localhost", "::1"}
+                ):
+                    token = secrets.token_urlsafe(32)
+                    print(f"Console login token (this launch only): {token}", flush=True)
                 server = create_server(
-                    args.host, args.port, os.getenv("EVOMESH_SERVER_TOKEN", ""), app.agent, app=app
+                    args.host,
+                    args.port,
+                    token,
+                    app.agent,
+                    app=app,
+                    with_worker=args.command == "console" or args.with_worker,
                 )
-                print(f"EvoMesh listening on {args.host}:{args.port}", flush=True)
+                print(f"EvoMesh console: http://{args.host}:{server.server_port}", flush=True)
                 try:
                     server.serve_forever()
                 finally:
@@ -155,11 +170,19 @@ def dispatch(args, store: Store, cfg: Config) -> None:
             elif args.command == "task-worker":
                 if args.interval <= 0:
                     raise ValueError("interval must be positive")
-                while True:
-                    display(app.work_once())
-                    if args.once:
-                        break
-                    time.sleep(args.interval)
+                from .channels import ChannelHub
+
+                hub = ChannelHub(app)
+                try:
+                    while True:
+                        hub.deliver_once()
+                        display(app.work_once())
+                        hub.deliver_once()
+                        if args.once:
+                            break
+                        time.sleep(args.interval)
+                finally:
+                    hub.close()
             else:
                 print(f"EvoMesh — session {args.session}; /quit, /reflect, /memory")
                 while True:

@@ -31,11 +31,13 @@ def scaffold(destination: Path, template: str = "assistant") -> None:
         ".gitignore": ".evomesh/\nworkspace/\n.venv/\n__pycache__/\n.env\n",
         "SOUL.md": "# My agent\n\nBe helpful, concise, and honest. Learn from observed friction.\n",
         "README.md": "# My EvoMesh agent\n\nRequires the installed EvoMesh package.\n\n"
-        "```bash\nevomesh chat --session main\nevomesh run --session main 'List files'\n"
+        "```bash\nevomesh console\nevomesh chat --session main\n"
+        "evomesh run --session main 'List files'\n"
         "evomesh task submit 'List files'\nevomesh task-worker --once\n"
         "evomesh task list\n```\n\nThe generated configuration uses an offline demo model. "
         "For real inference, set demo=false and configure your model endpoint. "
-        "Run `evomesh serve` with EVOMESH_SERVER_TOKEN set to expose the task API.\n",
+        "Run `evomesh console` for the web UI and embedded worker.\n"
+        "Use `evomesh serve` with EVOMESH_SERVER_TOKEN set for a separate web/API replica.\n",
     }
     if template == "framework":
         files["app.py"] = '''from evomesh import AgentApp, tool

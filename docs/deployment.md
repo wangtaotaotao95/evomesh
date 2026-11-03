@@ -1,4 +1,10 @@
-# Deployment and v0.2 upgrade
+# Deployment and v0.3 upgrade
+
+## Existing v0.2 installations
+
+Back up SQL, update the package and run `evomesh init` once before restarting API replicas and workers. v0.3 adds `runtime_channel_deliveries` without altering existing tables. Both storage backends use the same additive schema. Downgrading leaves this table intact; older workers do not deliver channel replies.
+
+`evomesh console` starts the bundled UI and an embedded task/reply worker. `serve` exposes the same UI/API without a worker unless `--with-worker` is specified. Existing Compose workers now also drain pending channel replies. See [console](console.md) and [channel setup](channels.md).
 
 ## Existing v0.1 installations
 
@@ -14,9 +20,9 @@ The Compose example now shares a `personal-data` volume between API replicas and
 evomesh new my-assistant
 cd my-assistant
 evomesh init
-evomesh chat --session main
-# In another terminal, same config/project/owner:
-evomesh task-worker
+evomesh console
+# Or use CLI/API + a separate worker instead:
+# evomesh task-worker
 ```
 
 Configure a real model by setting `demo=false`, model, base URL and `EVOMESH_API_KEY`. `.env` is not automatically loaded by the CLI; TOML and exported environment variables are supported. Env overrides TOML; explicit CLI flags override both.
@@ -47,7 +53,7 @@ evomesh serve --port 8765
 evomesh task-worker # Separate process; must stay running for tasks/schedules.
 ```
 
-`serve` accepts requests, `task-worker` executes durable jobs. `/run` executes synchronously; `/tasks` only queues. Schedules are materialized by the task worker and coalesce missed intervals. No external notifications or implicit daemon are installed.
+`serve` accepts requests, `task-worker` executes durable jobs. `/run` executes synchronously; `/tasks` only queues. Schedules are materialized by the task worker and coalesce missed intervals. Configured channel replies are drained by the same worker. No OS daemon is installed.
 
 Task cancellation stops subsequent steps, not actions already in flight. A worker crash or lost lease leaves the task `interrupted` when another worker checks the queue; inspect receipts/effects, then explicitly retry. The task runner never promises exactly-once external side effects. Keep worker clocks synchronized for lease expiry.
 
@@ -83,3 +89,9 @@ Inspect `git diff main..evolution/main`, stop tasks, run `evomesh upgrade`, rein
 Record the previous deployed revision/image. Roll back by redeploying it or creating a separate checkout at that commit. Preserve evolution history with a Git revert commit when needed. An SQL `integrated` record is historical; it does not assert that a change is currently deployed or has not been reverted.
 
 Back up both SQL and Git; they are not one distributed transaction. Application task/session state and personal files also require a coordinated backup strategy for your deployment.
+
+## Container channel configuration
+
+Copy `evomesh.channels.example.toml` to a private deployment config and mount it at `/data/evomesh.toml` in **both API services and every task-worker**. Set absolute `repo="/app"`, `workspace="/data/workspace"`; the shared `EVOMESH_DATABASE_URL` continues to override TOML. Provide all named channel environment variables to these services through your secret manager or a private Compose override. The base Compose file has no platform credentials or enabled channels. Restart after config changes; do not configure channels on API replicas alone.
+
+Expose `/webhooks/{account}` through a public HTTPS gateway. Keep the console/API behind bearer authentication; a gateway may restrict public routes to only webhooks. Bound request rates/body sizes/concurrency at the gateway. Host clocks must be synchronized for signature freshness and SQL leases.

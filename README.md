@@ -10,9 +10,9 @@ Multi-instance operation. SQLite or MySQL. Evolution across the whole agent stac
 [![CI](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
-![Alpha](https://img.shields.io/badge/status-v0.2_alpha-orange)
+![Alpha](https://img.shields.io/badge/status-v0.3_alpha-orange)
 
-[中文](README.zh-CN.md) · [Framework guide](docs/framework.md) · [Capability alignment](docs/alignment.md) · [Deployment](docs/deployment.md)
+[中文](README.zh-CN.md) · [Web console](docs/console.md) · [Channels](docs/channels.md) · [Framework guide](docs/framework.md) · [Capability alignment](docs/alignment.md) · [Deployment](docs/deployment.md)
 
 </div>
 
@@ -20,7 +20,7 @@ Agent friction can come from a skill, a missing tool, its soul, the ReAct loop, 
 
 The assistant and framework use **the same `AgentApp` runtime**. Memory, conversations, tools, background tasks, schedules, delegation, and evolution are reusable APIs, not features trapped inside a CLI.
 
-**v0.2 is an alpha, not full Hermes/OpenMuse parity.** It adds durable application capabilities to v0.1's evolution engine. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
+**v0.3 is an alpha, not full Hermes/OpenMuse parity.** It adds a bundled web console and Feishu/Lark, DingTalk and Telegram text channels on top of the durable runtime. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
 
 ## Two ways to start
 
@@ -39,7 +39,8 @@ pip install -e '.[dev,mysql,mcp]'
 ```bash
 evomesh new ../my-assistant --template assistant
 cd ../my-assistant
-evomesh chat --session main
+evomesh console  # Open http://127.0.0.1:8765; login token printed in terminal.
+# Or: evomesh chat --session main
 ```
 
 **Agent framework:**
@@ -65,6 +66,8 @@ Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use 
 
 | Capability | Personal assistant | Framework API |
 |---|---|---|
+| Web console | `evomesh console`: chat, tasks, memory, schedules, channels, evolution | `create_server(..., app=app, with_worker=True)` |
+| Message channels | Feishu/Lark, DingTalk and Telegram text callbacks/replies | `ChannelHub`, `ChannelAdapter`, atomic SQL inbox/outbox |
 | Durable conversations | `chat --session main`, `session show/list --query` | `app.run(..., session=...)`, owner-scoped history |
 | Personal memory | `remember/recall/forget` tools; `memory` commands | `app.state.remember/recall/forget` |
 | File tools, soul, skills | Loaded from workspace/source config | Normal `Tool` objects and configurable `Agent` |
@@ -158,6 +161,8 @@ evomesh serve --port 8765
 # Run separately for background tasks and schedules:
 evomesh task-worker
 ```
+
+Open the bundled console at `http://127.0.0.1:8765/`. `console` starts an embedded worker; `serve` keeps workers separate unless `--with-worker` is specified. Configure channel credentials and sender allowlists in [the channel guide](docs/channels.md).
 
 Authenticated API includes `/run`, `/tasks`, task events/cancel/retry, `/sessions`, `/memory`, and `/schedules`. It uses one server-configured owner, not an owner supplied by the caller. [API reference](docs/api.md).
 

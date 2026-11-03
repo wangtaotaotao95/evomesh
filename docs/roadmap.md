@@ -20,12 +20,21 @@
 - [x] Persistent MCP v2 stdio tool discovery/calls
 - [x] Real database/MCP/Docker verification in CI
 
+## v0.3 — channels and web console
+
+- [x] Feishu/Lark encrypted events, DingTalk signed callbacks, Telegram secret webhooks
+- [x] Text replies, explicit sender/group allowlists and environment-only credentials
+- [x] Atomic channel receipt/task enqueue; SQL reply claims and manual uncertainty recovery
+- [x] Bundled responsive console: overview/chat/tasks/memory/schedules/channels/evolution
+- [x] One-command console with embedded worker; reusable server/custom channel adapter APIs
+- [x] Protocol fixtures, HTTP end-to-end tests and browser flow verification
+
 ## Next: richer assistant surfaces without splitting the framework
 
 - [ ] Persistent interactive browser worker and takeover
 - [ ] Durable review/approval flow, pause/resume checkpoints and task plans
-- [ ] Token streaming and AG-UI adapter, personal activity UI
-- [ ] Native provider/channel connectors and OAuth onboarding
+- [ ] Token streaming and AG-UI adapter, richer personal activity UI
+- [ ] More provider/channel connectors and OAuth onboarding
 - [ ] Document/PDF/media workflows and personal service adapters
 - [ ] Rich skill management, semantic recall and context compression
 

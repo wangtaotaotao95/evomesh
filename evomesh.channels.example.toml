@@ -1,0 +1,32 @@
+# Merge the channel sections into your evomesh.toml; account names define callback paths.
+[evomesh]
+project = "personal"
+owner = "personal"
+database_url = "sqlite:///.evomesh/ledger.db"
+repo = "."
+workspace = "workspace"
+demo = true # Set false and configure your model for real assistant responses.
+
+[evomesh.channels.feishu]
+kind = "feishu"
+enabled = true
+region = "feishu" # "lark" for international Lark
+app_id_env = "FEISHU_APP_ID"
+app_secret_env = "FEISHU_APP_SECRET"
+verification_token_env = "FEISHU_VERIFICATION_TOKEN"
+encrypt_key_env = "FEISHU_ENCRYPT_KEY"
+allowed_senders = [] # Explicit open_id values, e.g. ["ou_..."]
+allowed_groups = [] # Explicit chat_id values; private chats need no group entry.
+
+[evomesh.channels.dingtalk]
+kind = "dingtalk"
+app_secret_env = "DINGTALK_APP_SECRET"
+allowed_senders = [] # senderId, not senderStaffId
+allowed_groups = [] # conversationId
+
+[evomesh.channels.telegram]
+kind = "telegram"
+bot_token_env = "TELEGRAM_BOT_TOKEN"
+webhook_secret_env = "TELEGRAM_WEBHOOK_SECRET"
+allowed_senders = [] # Numeric Telegram user IDs represented as strings.
+allowed_groups = [] # Numeric chat IDs represented as strings.

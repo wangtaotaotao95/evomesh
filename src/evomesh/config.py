@@ -27,6 +27,7 @@ class Config:
     allowed_hosts: list[str] = field(default_factory=list)
     plugin_modules: list[str] = field(default_factory=list)
     mcp_servers: dict[str, list[str]] = field(default_factory=dict)
+    channels: dict[str, dict] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:
@@ -61,6 +62,9 @@ class Config:
         return config
 
     def validate(self):
+        from .channels import validate_channels
+
+        validate_channels(self.channels)
         if type(self.max_steps) is not int or not 1 <= self.max_steps <= 100:
             raise ValueError("max_steps must be an integer in 1–100")
         if type(self.history_turns) is not int or not 1 <= self.history_turns <= 100:

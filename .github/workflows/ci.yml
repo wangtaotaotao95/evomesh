@@ -19,7 +19,7 @@ jobs:
       - run: ruff check . && ruff format --check .
       - run: pytest -q
       - run: python examples/evolution_demo.py
-      - run: python examples/framework_app.py && python examples/team.py
+      - run: python examples/framework_app.py && python examples/team.py && python examples/custom_channel.py
       - run: evomesh init && evomesh run --demo 'List my workspace'
   mysql:
     runs-on: ubuntu-latest
@@ -53,6 +53,14 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install build
       - run: python -m build
+      - run: pip install dist/*.whl
+      - name: Verify bundled console assets
+        run: |
+          python - <<'PY'
+          from importlib.resources import files
+          for name in ('index.html', 'app.js', 'style.css'):
+              assert files('evomesh').joinpath('web', name).read_bytes()
+          PY
   container:
     runs-on: ubuntu-latest
     steps:

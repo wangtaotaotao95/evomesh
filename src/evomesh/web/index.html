@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>EvoMesh · 控制台</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div id="login" class="login-shell">
+      <section class="login-story">
+        <a class="brand" href="/" aria-label="EvoMesh 首页"
+          ><span class="mark">e<span>•</span></span
+          >EvoMesh</a
+        >
+        <div>
+          <p class="eyebrow">YOUR AGENT. ALWAYS EVOLVING.</p>
+          <h1>与你协作，<br />与经验一起成长。</h1>
+          <p>
+            从个人助手到 Agent 框架。<br />让每次执行的经验，连接到整个系统的进化。
+          </p>
+        </div>
+        <div class="mesh" aria-hidden="true">
+          <span>SKILL</span><span>TOOL</span><b>e•</b><span>SOUL</span
+          ><span>LOOP</span><span>CODE</span>
+        </div>
+        <small>OPEN SOURCE · MIT LICENSE</small>
+      </section>
+      <section class="login-form">
+        <form id="login-form">
+          <p class="eyebrow">WORKSPACE CONSOLE</p>
+          <h2>连接你的工作空间</h2>
+          <p class="muted">输入启动终端显示的令牌，或配置的服务器令牌。</p>
+          <label for="token">访问令牌</label
+          ><input
+            id="token"
+            type="password"
+            placeholder="EVOMESH_SERVER_TOKEN"
+            required
+            autocomplete="current-password"
+          />
+          <button class="primary" type="submit">
+            进入控制台 <span>↗</span>
+          </button>
+          <p id="login-error" role="alert"></p>
+          <div class="login-note">
+            令牌仅保存在当前浏览器标签页。<br />使用
+            <code>evomesh console --demo</code> 可体验本地演示。
+          </div>
+        </form>
+      </section>
+    </div>
+    <div id="shell" class="shell" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#overview"
+          ><span class="mark">e<span>•</span></span
+          >EvoMesh</a
+        >
+        <div class="workspace-label">
+          <span class="workspace-icon">E</span>
+          <div>
+            <strong id="project">工作空间</strong
+            ><small>个人助手 / Agent 框架</small>
+          </div>
+        </div>
+        <p class="nav-label">工作空间</p>
+        <nav id="nav" aria-label="主导航">
+          <a href="#overview" data-page="overview"
+            ><span data-icon="grid"></span>概览</a
+          >
+          <a href="#chat" data-page="chat"
+            ><span data-icon="chat"></span>与助手对话<span class="nav-hint"
+              >↗</span
+            ></a
+          >
+          <a href="#tasks" data-page="tasks"
+            ><span data-icon="tasks"></span>任务</a
+          >
+          <a href="#memory" data-page="memory"
+            ><span data-icon="memory"></span>长期记忆</a
+          >
+          <a href="#schedules" data-page="schedules"
+            ><span data-icon="clock"></span>定时任务</a
+          >
+        </nav>
+        <p class="nav-label">系统</p>
+        <nav aria-label="系统导航">
+          <a href="#channels" data-page="channels"
+            ><span data-icon="link"></span>消息渠道</a
+          >
+          <a href="#evolution" data-page="evolution"
+            ><span data-icon="evolve"></span>进化记录</a
+          >
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="growth">
+            <span class="dot"></span><strong>共同执行，持续进化</strong>
+            <p>Skill · Tool · Soul · Loop · Code</p>
+          </div>
+          <button id="logout" class="profile">
+            <span class="avatar">P</span
+            ><span
+              ><strong id="owner">personal</strong
+              ><small>退出当前连接</small></span
+            ><span>↪</span>
+          </button>
+        </div>
+      </aside>
+      <div class="main-shell">
+        <header class="topbar">
+          <span
+            >EvoMesh <span class="slash">/</span>
+            <strong id="breadcrumb">概览</strong></span
+          >
+          <div>
+            <span id="connection" class="connection"
+              ><i class="dot"></i>已连接</span
+            ><span id="version" class="version"></span
+            ><button id="refresh" class="icon-button" aria-label="刷新页面">
+              ↻
+            </button>
+          </div>
+        </header>
+        <main id="main" tabindex="-1"></main>
+        <footer>
+          你的助手，你的代码，你的进化。<span>Built with EvoMesh</span>
+        </footer>
+      </div>
+    </div>
+    <div id="toast" role="status" hidden></div>
+    <dialog id="detail">
+      <div class="dialog-top">
+        <h2 id="detail-title">任务详情</h2>
+        <button id="close-detail" class="icon-button" aria-label="关闭详情">
+          ×
+        </button>
+      </div>
+      <div id="detail-body"></div>
+    </dialog>
+  </body>
+</html>

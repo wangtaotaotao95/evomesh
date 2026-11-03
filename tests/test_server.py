@@ -112,3 +112,113 @@ def test_durable_api_task_roundtrip_and_private_routes(store, project, tmp_path)
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_console_assets_and_embedded_worker(store, project, tmp_path):
+    import time
+
+    from evomesh import AgentApp, Config
+
+    app = AgentApp(
+        Config(project=project, workspace=tmp_path, demo=True), store=store, initialize=False
+    )
+    server = create_server("127.0.0.1", 0, "console-token", app.agent, app=app, with_worker=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}", trust_env=False) as c:
+            for path in ("/", "/app.js", "/style.css"):
+                response = c.get(path)
+                assert response.status_code == 200
+                assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+            for path in ("/status", "/channels", "/deliveries", "/evolution"):
+                assert c.get(path).status_code == 401
+            c.headers["Authorization"] = "Bearer console-token"
+            status = c.get("/status").json()
+            assert status["embedded_worker"] is True and "database_url" not in status
+            task = c.post("/tasks", json={"task": "List files", "session": "console"}).json()["id"]
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                result = c.get("/tasks/" + task).json()
+                if result["status"] == "succeeded":
+                    break
+                time.sleep(0.05)
+            assert result["status"] == "succeeded"
+            assert c.get("/status").json()["tasks"]["succeeded"] == 1
+            assert "Workspace files" in c.get("/sessions/console").json()[-1]["content"]
+            assert c.post("/observations", json={"detail": "Improve navigation"}).status_code == 200
+            assert c.get("/evolution").json()["observations"][0]["detail"] == "Improve navigation"
+            assert c.post("/deliveries/id/retry", json={}).status_code == 400
+            assert c.post("/webhooks/missing", json={}).status_code == 403
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert not server.worker.is_alive()
+
+
+def test_webhook_http_ack_dedup_and_worker_reply(store, project, tmp_path, monkeypatch):
+    import json
+    import time
+
+    from evomesh import AgentApp, Config
+    from evomesh.channels import ChannelHub
+
+    monkeypatch.setenv("TEST_BOT", "fake-bot-token")
+    monkeypatch.setenv("TEST_HOOK", "test-hook-secret")
+    app = AgentApp(
+        Config(
+            project=project,
+            workspace=tmp_path,
+            demo=True,
+            channels={
+                "telegram": {
+                    "kind": "telegram",
+                    "bot_token_env": "TEST_BOT",
+                    "webhook_secret_env": "TEST_HOOK",
+                    "allowed_senders": ["42"],
+                }
+            },
+        ),
+        store=store,
+        initialize=False,
+    )
+    sent = []
+
+    def reply(request):
+        sent.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    provider = httpx.Client(transport=httpx.MockTransport(reply))
+    hub = ChannelHub(app, client=provider)
+    server = create_server(
+        "127.0.0.1", 0, "console-token", app.agent, app=app, channels=hub, with_worker=True
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        event = {
+            "update_id": 1,
+            "message": {
+                "message_id": 3,
+                "from": {"id": 42, "is_bot": False},
+                "chat": {"id": 42, "type": "private"},
+                "text": "List files",
+            },
+        }
+        with httpx.Client(base_url=f"http://127.0.0.1:{server.server_port}", trust_env=False) as c:
+            assert c.post("/webhooks/telegram", json=event).status_code == 403
+            headers = {"X-Telegram-Bot-Api-Secret-Token": "test-hook-secret"}
+            for _ in range(3):
+                assert c.post("/webhooks/telegram", headers=headers, json=event).status_code == 200
+            deadline = time.time() + 10
+            while time.time() < deadline and not sent:
+                time.sleep(0.05)
+            assert len(sent) == 1
+            assert "Workspace files" in json.loads(sent[0].content)["text"]
+            assert len(app.state.list_tasks()) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+        provider.close()
