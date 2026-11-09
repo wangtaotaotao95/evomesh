@@ -143,3 +143,19 @@ def test_rejected_candidate_does_not_publish(store, project, tmp_path):
     result = app.evolve_once()
     assert result["integration"]["status"] == "rejected"
     assert revision(app.config.repo, "evolution/main") == before
+
+
+def test_review_has_independent_step_budget_and_diagnostic(store, project, tmp_path):
+    app = application(store, project, tmp_path, max_steps=1, evolution_max_steps=6)
+    assert app.evolve_once()["status"] == "succeeded"
+    assert app.config.max_steps == 1
+    app.config.evolution_max_steps = 2
+    result = app.evolve_once(force=True)
+    assert result == {"status": "failed", "error": "StepLimitExceeded"}
+    assert ProactiveEvolution(app).status()["report"] == {"error": "StepLimitExceeded"}
+
+
+@pytest.mark.parametrize("budget", [0, 101, True, 1.5])
+def test_review_step_budget_validation(budget):
+    with pytest.raises(ValueError, match="evolution_max_steps"):
+        Config(evolution_max_steps=budget).validate()

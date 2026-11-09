@@ -19,6 +19,7 @@ browser = true
 browser_allowed_hosts = ["example.com"] # Or ["*"] for public HTTPS hosts
 proactive_evolution = true
 evolution_interval_seconds = 3600
+evolution_max_steps = 32 # Independent of user-task max_steps; range 1–100
 evolution_checks = [["python", "-m", "pytest", "-q"]]
 evolution_branch = "evolution/main"
 ```
@@ -77,6 +78,19 @@ print(execute.invoke('{"code":"print(sum(range(10)))"}'))
 there are no error observations. The reflector reads a pinned source revision,
 identifies a concrete improvement and calls `record_finding` with previously read
 paths. These source-review observations are distinct from measured runtime errors.
+`read_source` returns character-based pages with `offset`, `total_chars` and
+`next_offset`; follow `next_offset` until null to read a complete file. Responses
+include JSON escaping in their size budget, so large or escape-heavy files remain
+valid JSON below the tool output limit. Files remain bounded to 100 KB. Never build
+a full replacement from only one partial source page.
+
+Active review uses `evolution_max_steps` (default 32), independently of the assistant's
+`max_steps` (default 12). Override one CLI run with
+`evomesh evolve --evolution-max-steps 40`. The reflector is told to reserve steps for
+evidence and a proposal; hitting the bound reports `StepLimitExceeded` rather than
+an undifferentiated `RuntimeError`. A larger budget allows more model calls and costs;
+it does not guarantee that a review will discover or complete a useful change.
+
 The proposal links evidence IDs and can change skills, tools, soul, loop, tests,
 configuration or any other permitted repository text file. One cycle submits at
 most one proposal; no worthwhile finding means no proposal. Recent proposal summaries

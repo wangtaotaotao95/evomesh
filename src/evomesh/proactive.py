@@ -113,6 +113,7 @@ class ProactiveEvolution:
         report, status = {}, "succeeded"
         try:
             agent = self.app.agent(cancelled=lost.is_set)
+            agent.max_steps = cfg.evolution_max_steps
             report["proposals"] = agent.reflect(proactive=True, guard=lambda: self._renew(token))
             self._renew(token)
             if cfg.evolution_checks:

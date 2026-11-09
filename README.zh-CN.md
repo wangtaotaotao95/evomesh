@@ -126,6 +126,8 @@ MCP 当前支持可信 stdio 服务的工具发现与调用，并维护服务会
 
 配置 `proactive_evolution = true` 后，console/task-worker 在空闲时按 `evolution_interval_seconds` 主动检查源码，即使没有错误记录也能发现改进机会。实例通过共享 SQL 租约协调，同一项目同时只运行一轮检查；发现必须引用读过的源码，提案关联检查证据。
 
+主动检查使用独立的 `evolution_max_steps`（默认 32，范围 1–100），不占用普通对话的步数配置。源码按字符分页读取，返回 `next_offset` 供继续读取，避免大文件被工具输出上限截断；达到步数上限时明确记录 `StepLimitExceeded`。提高预算会增加潜在模型调用量，不保证一定产生有效提案。
+
 配置 `evolution_checks` 后会继续验证并合入 `evolution/main`；不配置时保留待集成提案。检查失败不会发布候选代码。运行实例升级仍需显式部署，不会在任务中热替换代码。也可用 `evomesh evolve --force` 或 `app.evolve_once(force=True)` 手动立即触发，活跃租约不能被强制覆盖。
 
 ## 全栈进化仍是核心

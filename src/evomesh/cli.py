@@ -34,6 +34,7 @@ def parser() -> argparse.ArgumentParser:
     for name in ("run", "chat", "reflect", "evolve", "serve", "console", "task-worker"):
         sub = commands.add_parser(name)
         if name == "evolve":
+            sub.add_argument("--evolution-max-steps", type=int)
             sub.add_argument(
                 "--force", action="store_true", help="Ignore cooldown, never active leases"
             )
@@ -137,6 +138,7 @@ def configuration(args) -> Config:
         "demo",
         "max_steps",
         "auto_reflect",
+        "evolution_max_steps",
     ):
         value = getattr(args, key, None)
         if value is not None:

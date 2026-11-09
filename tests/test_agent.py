@@ -148,3 +148,56 @@ def test_compatible_adapter_preserves_reasoning_for_tool_continuations(monkeypat
     messages.append({"role": "tool", "tool_call_id": "call-1", "content": "[]"})
     assert model.complete(messages, [])["content"] == "Done"
     assert requests[1]["messages"][1]["reasoning_content"] == "provider continuation state"
+
+
+@pytest.mark.parametrize("source", ["line = 'hello'\n" * 2500, '\x01\\"\t中' * 6000])
+def test_reflection_source_pages_are_complete_and_fit_tool_output(store, project, tmp_path, source):
+    git(tmp_path, "init", "-b", "main")
+    (tmp_path / "large.txt").write_text(source)
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "large source")
+
+    class Reader:
+        def __init__(self):
+            self.pages = []
+
+        def complete(self, messages, tools):
+            offset = 0
+            if messages[-1]["role"] == "tool":
+                raw = messages[-1]["content"]
+                assert len(raw) <= 18000
+                page = json.loads(raw)
+                assert page["offset"] == sum(map(len, self.pages))
+                assert page["total_chars"] == len(source)
+                self.pages.append(page["content"])
+                offset = page["next_offset"]
+                if offset is None:
+                    return {"role": "assistant", "content": "Read all source"}
+            return call("read_source", {"path": "large.txt", "offset": offset})
+
+    reader = Reader()
+    agent = Agent(reader, store, [], project=project, repo=tmp_path, max_steps=32)
+    assert agent.reflect(proactive=True) == []
+    assert len(reader.pages) > 1 and "".join(reader.pages) == source
+    assert not any(r["kind"] == "tool_output_limit" for r in store.observations(project))
+
+
+def test_source_pagination_rejects_invalid_offsets_and_limits(store, project, tmp_path):
+    git(tmp_path, "init", "-b", "main")
+    (tmp_path / "short.txt").write_text("hello")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "short source")
+    model = ScriptedModel(
+        [
+            call("read_source", {"path": "short.txt", "offset": -1}),
+            call("read_source", {"path": "short.txt", "offset": 100}),
+            call("read_source", {"path": "short.txt", "limit": 12001}),
+            call("read_source", {"path": "short.txt", "offset": 5}),
+            {"role": "assistant", "content": "Done"},
+        ]
+    )
+    Agent(model, store, [], project=project, repo=tmp_path).reflect(proactive=True)
+    for index in (1, 2, 3):
+        assert "error" in json.loads(model.received[index][-1]["content"])
+    page = json.loads(model.received[4][-1]["content"])
+    assert page["content"] == "" and page["next_offset"] is None

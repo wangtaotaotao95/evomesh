@@ -16,6 +16,7 @@ browser = false # pip install -e '.[browser]' && python -m playwright install ch
 browser_allowed_hosts = [] # ["example.com"] or ["*"] for public HTTPS hosts.
 proactive_evolution = false # Turn on active reviews in an idle console/task worker.
 evolution_interval_seconds = 3600 # Project-wide cooldown; minimum 300 seconds.
+evolution_max_steps = 32 # Independent of the interactive assistant's max_steps.
 evolution_checks = [] # Optional automatic integration; e.g. [["python", "-m", "pytest", "-q"]].
 evolution_branch = "evolution/main" # Validated commits; deployment remains explicit.
 plugin_modules = [] # Trusted Python modules exporting register(app).

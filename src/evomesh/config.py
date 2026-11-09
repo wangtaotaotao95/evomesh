@@ -30,6 +30,7 @@ class Config:
     browser_allowed_hosts: list[str] = field(default_factory=list)
     proactive_evolution: bool = False
     evolution_interval_seconds: int = 3600
+    evolution_max_steps: int = 32
     evolution_checks: list[list[str]] = field(default_factory=list)
     evolution_branch: str = "evolution/main"
     allowed_hosts: list[str] = field(default_factory=list)
@@ -81,6 +82,8 @@ class Config:
             raise ValueError("context_chars must be an integer in 16,000–1,000,000")
         if type(self.repeat_limit) is not int or not 2 <= self.repeat_limit <= 20:
             raise ValueError("repeat_limit must be an integer in 2–20")
+        if type(self.evolution_max_steps) is not int or not 1 <= self.evolution_max_steps <= 100:
+            raise ValueError("evolution_max_steps must be an integer in 1–100")
         if self.terminal not in {"disabled", "local", "docker"}:
             raise ValueError("terminal must be disabled, local or docker")
         if type(self.browser) is not bool or type(self.proactive_evolution) is not bool:

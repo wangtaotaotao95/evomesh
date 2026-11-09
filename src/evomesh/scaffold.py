@@ -20,6 +20,7 @@ browser_allowed_hosts = []
 proactive_evolution = false
 # Enable real inference, initialize/commit repo, then opt in to active reviews.
 evolution_interval_seconds = 3600
+evolution_max_steps = 32
 evolution_checks = []
 # For a real model: demo = false, then set model and base_url here or via environment.
 # Keep EVOMESH_API_KEY in your environment, never in source control.
