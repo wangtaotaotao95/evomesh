@@ -11,7 +11,13 @@ repeat_limit = 3 # Identical tool/argument attempts per turn.
 max_steps = 12
 auto_reflect = false
 terminal = "disabled" # Opt in to "local" or "docker".
-allowed_hosts = [] # For read_web, e.g. ["example.com"]. No interactive browser.
+allowed_hosts = [] # For read_web, e.g. ["example.com"].
+browser = false # pip install -e '.[browser]' && python -m playwright install chromium
+browser_allowed_hosts = [] # ["example.com"] or ["*"] for public HTTPS hosts.
+proactive_evolution = false # Turn on active reviews in an idle console/task worker.
+evolution_interval_seconds = 3600 # Project-wide cooldown; minimum 300 seconds.
+evolution_checks = [] # Optional automatic integration; e.g. [["python", "-m", "pytest", "-q"]].
+evolution_branch = "evolution/main" # Validated commits; deployment remains explicit.
 plugin_modules = [] # Trusted Python modules exporting register(app).
 
 # Set demo=false for real inference, and provide model/base_url here or through env.

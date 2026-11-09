@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "evomesh-agent"
-version = "0.4.0a1"
+version = "0.5.0a1"
 description = "A personal agent and framework that evolves its whole stack across instances."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,6 +12,7 @@ license = "MIT"
 dependencies = ["sqlalchemy>=2.0,<2.1", "httpx>=0.27,<1", "jsonschema>=4.23,<5", "cryptography>=44,<50"]
 
 [project.optional-dependencies]
+browser = ["playwright>=1.49,<2"]
 mysql = ["pymysql[rsa]>=1.1,<2"]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 mcp = [

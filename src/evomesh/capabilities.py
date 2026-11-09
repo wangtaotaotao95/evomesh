@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import uuid
 from html.parser import HTMLParser
@@ -106,6 +108,41 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
             }
         ),
         run,
+        source_paths=("src/evomesh/capabilities.py",),
+        capability="terminal",
+        result_is_error=lambda result: json.loads(result)["exit_code"] != 0,
+    )
+
+
+def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 30) -> Tool:
+    """One-shot Python/JavaScript execution using the terminal's isolation contract."""
+    terminal = terminal_tool(workspace, backend, timeout)
+
+    def execute(code: str, language: str = "python") -> dict:
+        if language == "python":
+            argv = [sys.executable if backend == "local" else "python", "-I", "-c", code]
+        elif language == "javascript" and backend == "local":
+            argv = ["node", "-e", code]
+        else:
+            raise ValueError("Docker supports Python; local supports Python and installed Node.js")
+        return terminal.handler(argv)
+
+    return Tool(
+        "execute_code",
+        "Execute a one-shot Python or JavaScript program; print results. "
+        "No persistent kernel or access to agent credentials. Same permissions as terminal. "
+        "Docker supports Python only; local JavaScript requires Node.js.",
+        object_schema(
+            {
+                "code": {"type": "string", "minLength": 1, "maxLength": 50000},
+                "language": {"type": "string", "enum": ["python", "javascript"]},
+            },
+            ["code"],
+        ),
+        execute,
+        source_paths=("src/evomesh/capabilities.py",),
+        capability="execution",
+        result_is_error=terminal.result_is_error,
     )
 
 
@@ -171,4 +208,5 @@ def web_tool(allowed_hosts: list[str]) -> Tool:
         "Read text from a configured public HTTPS host; no JS or login browser.",
         object_schema({"url": {"type": "string"}}),
         read,
+        source_paths=("src/evomesh/capabilities.py",),
     )

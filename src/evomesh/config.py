@@ -26,6 +26,12 @@ class Config:
     repeat_limit: int = 3
     auto_reflect: bool = False
     terminal: str = "disabled"
+    browser: bool = False
+    browser_allowed_hosts: list[str] = field(default_factory=list)
+    proactive_evolution: bool = False
+    evolution_interval_seconds: int = 3600
+    evolution_checks: list[list[str]] = field(default_factory=list)
+    evolution_branch: str = "evolution/main"
     allowed_hosts: list[str] = field(default_factory=list)
     plugin_modules: list[str] = field(default_factory=list)
     mcp_servers: dict[str, list[str]] = field(default_factory=dict)
@@ -77,11 +83,29 @@ class Config:
             raise ValueError("repeat_limit must be an integer in 2–20")
         if self.terminal not in {"disabled", "local", "docker"}:
             raise ValueError("terminal must be disabled, local or docker")
+        if type(self.browser) is not bool or type(self.proactive_evolution) is not bool:
+            raise ValueError("browser and proactive_evolution must be booleans")
+        if (
+            type(self.evolution_interval_seconds) is not int
+            or self.evolution_interval_seconds < 300
+        ):
+            raise ValueError("evolution_interval_seconds must be an integer of at least 300")
+        if not isinstance(self.evolution_checks, list) or any(
+            not isinstance(argv, list)
+            or not argv
+            or any(not isinstance(arg, str) or not arg for arg in argv)
+            for argv in self.evolution_checks
+        ):
+            raise ValueError("evolution_checks must contain non-empty command arrays")
+        if not isinstance(self.evolution_branch, str) or not self.evolution_branch:
+            raise ValueError("evolution_branch is required")
         if type(self.demo) is not bool or type(self.auto_reflect) is not bool:
             raise ValueError("demo and auto_reflect must be booleans")
-        for value in (self.allowed_hosts, self.plugin_modules):
+        for value in (self.allowed_hosts, self.plugin_modules, self.browser_allowed_hosts):
             if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
                 raise ValueError("allowed_hosts and plugin_modules must be arrays of strings")
+        if self.browser and not self.browser_allowed_hosts:
+            raise ValueError("Configure browser_allowed_hosts; use ['*'] for public HTTPS hosts")
         if not isinstance(self.mcp_servers, dict) or any(
             not isinstance(name, str)
             or not isinstance(argv, list)

@@ -59,3 +59,15 @@
 - [ ] General schema migrations, remote Git publication coordination
 
 Use [the capability alignment matrix](alignment.md) to distinguish implemented primitives from full product parity. A merged patch is not automatically a measured improvement.
+
+## v0.5 — computer tools and proactive evolution
+
+- [x] Per-task Chromium: open, snapshot, click, fill, back, screenshot
+- [x] Python/local JavaScript execute_code with terminal isolation and timeout
+- [x] Literal file search with line evidence and exact-match editing
+- [x] Idle, project-wide proactive source review without requiring runtime errors
+- [x] Source findings, bounded proposals, SQL lease/cooldown, optional gated integration
+- [x] Real Chromium fixture test and multi-instance review regression tests
+- [ ] Cross-turn browser profiles and interactive takeover
+- [ ] Persistent code kernels and programmatic tool composition
+- [ ] Dedicated review worker to avoid idle-worker scheduling delays under sustained load

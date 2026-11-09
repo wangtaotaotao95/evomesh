@@ -107,6 +107,11 @@ def create_server(
                 return
             state = app.state
             try:
+                if parts == ["evolution-status"]:
+                    from .proactive import ProactiveEvolution
+
+                    self.send_json(200, ProactiveEvolution(app).status())
+                    return
                 if parts == ["status"]:
                     from . import __version__
 
@@ -128,6 +133,8 @@ def create_server(
                         "demo": app.config.demo,
                         "tasks": counts,
                         "embedded_worker": bool(server.worker and server.worker.is_alive()),
+                        "proactive_evolution": app.config.proactive_evolution,
+                        "tools": list(app.tools),
                         "worker_error": server.worker_error,
                     }
                 elif parts == ["capabilities"]:

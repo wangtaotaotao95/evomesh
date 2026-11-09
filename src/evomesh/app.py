@@ -15,7 +15,7 @@ from pathlib import Path
 from sqlalchemy.engine import make_url
 
 from .agent import DEFAULT_SOUL, Agent, RunCancelled
-from .capabilities import terminal_tool, web_tool
+from .capabilities import execute_code_tool, terminal_tool, web_tool
 from .cognition import CognitionStore, SkillLibrary
 from .config import Config
 from .learning import LearningStore, capability_catalog
@@ -66,6 +66,7 @@ class AgentApp:
         self.learning = LearningStore(self.state)
         self._run_context = ContextVar("evomesh_run_context", default=None)
         self._metrics = ContextVar("evomesh_metrics", default=None)
+        self._browser_context = ContextVar("evomesh_browser_context", default=None)
         self.on_event, self.before_tool = on_event, before_tool
         if model_factory:
             self.model_factory = model_factory
@@ -89,6 +90,11 @@ class AgentApp:
         self._register_cognition_tools()
         if cfg.terminal != "disabled":
             self.register(terminal_tool(cfg.workspace, cfg.terminal))
+            self.register(execute_code_tool(cfg.workspace, cfg.terminal))
+        if cfg.browser:
+            from .browser import browser_tool
+
+            self.register(browser_tool(self._browser_session))
         if cfg.allowed_hosts:
             self.register(web_tool(cfg.allowed_hosts))
         for item in tools or []:
@@ -168,6 +174,23 @@ class AgentApp:
     @property
     def last_run_metrics(self):
         return self._metrics.get()
+
+    def _browser_session(self):
+        from .browser import BrowserSession
+
+        if self._run_context.get() is None:
+            raise ValueError("Browser tools require AgentApp.run or a standalone BrowserSession")
+        session = self._browser_context.get()
+        if session is None:
+            session = BrowserSession(self.config.workspace, self.config.browser_allowed_hosts)
+            self._browser_context.set(session)
+        return session
+
+    def evolve_once(self, *, force=False):
+        """Actively review source even without failures; optionally validate/integrate proposals."""
+        from .proactive import ProactiveEvolution
+
+        return ProactiveEvolution(self).once(force=force)
 
     def capabilities(self):
         return capability_catalog(self.config.repo, self.tools.values())
@@ -305,6 +328,7 @@ class AgentApp:
         session = session or str(uuid.uuid4())
         token, history = self.state.acquire_session(session)
         context_token = self._run_context.set((session, token))
+        browser_token = self._browser_context.set(None)
         run_id = str(uuid.uuid4())
         stop, lost = threading.Event(), threading.Event()
 
@@ -333,6 +357,15 @@ class AgentApp:
         finally:
             stop.set()
             thread.join()
+            browser = self._browser_context.get()
+            self._browser_context.reset(browser_token)
+            if browser is not None:
+                try:
+                    browser.close()
+                except Exception:
+                    import logging
+
+                    logging.getLogger(__name__).warning("Browser cleanup failed")
             released = False
             try:
                 self.state.release_session(session, token, completed)
@@ -387,6 +420,8 @@ class AgentApp:
         self.state.tick()
         row = self.state.claim_task()
         if row is None:
+            if self.config.proactive_evolution and not self.config.demo:
+                self.evolve_once()
             return None
         identifier, token = row["id"], row["token"]
         stop, lost = threading.Event(), threading.Event()

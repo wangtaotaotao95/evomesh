@@ -29,7 +29,13 @@ class ChatModel:
             # Provider bodies and request URLs can contain secrets; keep diagnostics minimal.
             raise RuntimeError(f"Model endpoint returned HTTP {response.status_code}")
         message = response.json()["choices"][0]["message"]
-        return {key: message[key] for key in ("role", "content", "tool_calls") if key in message}
+        # DeepSeek thinking-mode tool calls require this provider field to be
+        # round-tripped with assistant messages, including across resumed turns.
+        return {
+            key: message[key]
+            for key in ("role", "content", "tool_calls", "reasoning_content")
+            if key in message
+        }
 
 
 class DemoModel:

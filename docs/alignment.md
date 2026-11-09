@@ -4,7 +4,7 @@ Reviewed 2026-11-03 against the primary [Hermes README](https://github.com/NousR
 
 Hermes emphasizes learning from use, personal memory, scheduled work, messaging surfaces, tool environments and delegation. OpenMuse emphasizes a personal agent with visible durable work, browser/computer access, documents and connected personal services. EvoMesh keeps both use cases available through the same assistant/framework runtime.
 
-| Capability | EvoMesh v0.4 implementation | Remaining gap |
+| Capability | EvoMesh v0.5 implementation | Remaining gap |
 |---|---|---|
 | Ready-to-run assistant | Assistant scaffold, web console + embedded worker, CLI chat, persisted named sessions, model configuration | Rich TUI, mobile/desktop client |
 | Ready-to-use framework | Framework scaffold, `AgentApp`, `@tool`, model/tool injection, async bridge, hooks | More native model adapters and richer tracing ecosystem |
@@ -13,8 +13,8 @@ Hermes emphasizes learning from use, personal memory, scheduled work, messaging 
 | Plans and knowledge | Versioned session plans; bounded cited text retrieval with source freshness; context budget/repeat controls | Executable task DAGs, checkpoint resume, vector search, rich document parsing |
 | Background work | Durable SQL tasks, leases, events, cancellation, explicit retry | Pause/resume checkpoints, executable task graphs and proactive channel notifications |
 | Recurring work | Interval schedules and transactional enqueueing; multi-worker deduplication | Cron/timezone expressions, backoff policies and schedule-to-channel routing |
-| Agent computer | File tools; opt-in local terminal or restricted Docker command runner | Interactive terminal, browser session/profile/takeover, graphical desktop |
-| Web access | Allowlisted public HTTPS text retrieval | Browser automation and search-provider adapters |
+| Agent computer | File search/exact edits; local/Docker terminal; Python/local JavaScript execution; per-run Chromium open/snapshot/click/fill/back/screenshot | Interactive PTY, cross-turn browser persistence/profile/takeover, graphical desktop |
+| Web access | Allowlisted public HTTPS text retrieval and Chromium interaction | Search-provider adapters |
 | Tool ecosystem | Typed decorators, trusted plugin modules, persistent MCP stdio tools | MCP remote OAuth/resources/prompts/media; packaged connector catalog |
 | Delegation | Named apps, parallel `Team.run`, coordinator delegation tool | Durable subtask graphs, recursive planning and per-child budgets |
 | Visible/control flow | Web chat/task/event/memory/schedule/evolution console; CLI events, application tool-policy hook | Token streaming, AG-UI/rich cards, durable human approvals UI |
@@ -22,7 +22,7 @@ Hermes emphasizes learning from use, personal memory, scheduled work, messaging 
 | Documents and media | Workspace files only | PDF forms, attachments, voice, image workflows and document viewers |
 | Goals and monitoring | Scheduled task primitive | Goals/milestones, dedicated monitors and deduplicated notifications |
 | Multi-instance operation | SQLite same-host / MySQL cross-host; sessions/tasks/schedules coordinated through SQL | Independent file replication and remote Git publication coordination |
-| Whole-stack evolution | Whole-source proposals, source catalog/custom-tool provenance, observation-ID links, private run metrics, behavioral evaluation gates, detached validation | Broad held-out benchmarks, semantic merges, automatic rollout/rollback |
+| Whole-stack evolution | Proactive idle review with SQL leases, source findings, optional gated integration; whole-source proposals, source catalog/custom-tool provenance, observation-ID links, private run metrics, behavioral evaluation gates, detached validation | Broad held-out benchmarks, semantic merges, automatic rollout/rollback |
 
 ## Product rule
 
@@ -38,3 +38,5 @@ The automated suite exercises durable runtime contracts on SQLite and MySQL, mod
 2. Token/AG-UI event adapter and richer activity views built on the shipped console.
 3. Native model adapters, more personal service connectors, richer document tools.
 4. Broader held-out evaluation, acceptance scoring and deployment version registry.
+
+2026-11-09 tool review: [Hermes tools](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools), [browser](https://hermes-agent.nousresearch.com/docs/user-guide/features/browser), [code execution](https://hermes-agent.nousresearch.com/docs/user-guide/features/code-execution/). EvoMesh execute_code is one-shot execution, not Hermes-style tool orchestration or a persistent Python kernel. Browser sessions span tool calls within one task only.

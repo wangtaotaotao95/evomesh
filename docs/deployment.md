@@ -1,6 +1,8 @@
-# Deployment and v0.4 upgrade
+# Deployment and v0.5 upgrade
 
 ## Existing v0.3 installations
+
+v0.5 additionally creates the project-scoped `evolution_cycles` table for proactive review leases, cooldowns and reports. No existing columns are altered. Opt into `proactive_evolution` after configuring real inference and a committed source repo; configure `evolution_checks` to integrate validated candidates. Install the optional `browser` extra plus Chromium on workers that enable browser tools.
 
 Back up SQL, update the package and run `evomesh init` once before restarting replicas. v0.4 adds `runtime_plans`, `runtime_documents`, `runtime_runs` and `proposal_evidence` with indexes; existing tables are unchanged. The new runtime expects these tables. Plans, document indexes and run metrics are owner-scoped; proposal evidence is project-scoped. Old releases ignore the new tables when rolled back.
 

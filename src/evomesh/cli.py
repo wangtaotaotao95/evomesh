@@ -31,8 +31,12 @@ def parser() -> argparse.ArgumentParser:
     new = commands.add_parser("new", help="Create a ready-to-run assistant or framework project")
     new.add_argument("destination", type=Path)
     new.add_argument("--template", choices=["assistant", "framework"], default="assistant")
-    for name in ("run", "chat", "reflect", "serve", "console", "task-worker"):
+    for name in ("run", "chat", "reflect", "evolve", "serve", "console", "task-worker"):
         sub = commands.add_parser(name)
+        if name == "evolve":
+            sub.add_argument(
+                "--force", action="store_true", help="Ignore cooldown, never active leases"
+            )
         if name == "run":
             sub.add_argument("task")
         if name in {"run", "chat"}:
@@ -186,7 +190,7 @@ def dispatch(args, store: Store, cfg: Config) -> None:
     elif args.command == "init":
         store.initialize()
         print("Evolution and application storage initialized.")
-    elif args.command in {"run", "chat", "reflect", "serve", "console", "task-worker"}:
+    elif args.command in {"run", "chat", "reflect", "evolve", "serve", "console", "task-worker"}:
         app = AgentApp(
             cfg,
             store=store,
@@ -220,6 +224,8 @@ def dispatch(args, store: Store, cfg: Config) -> None:
                     server.serve_forever()
                 finally:
                     server.server_close()
+            elif args.command == "evolve":
+                display(app.evolve_once(force=args.force))
             elif args.command == "reflect":
                 if cfg.demo:
                     raise ValueError("Reflection requires a real tool-capable model")

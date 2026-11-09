@@ -127,3 +127,24 @@ def test_compatible_http_adapter(monkeypatch):
     ) == {"role": "assistant", "content": "ok"}
     assert received[0][0] == "https://example.invalid/v1/chat/completions"
     assert received[0][1]["headers"]["Authorization"] == "Bearer key"
+
+
+def test_compatible_adapter_preserves_reasoning_for_tool_continuations(monkeypatch):
+    import httpx
+
+    requests = []
+    assistant = call("list_files", {"path": "."})
+    assistant["reasoning_content"] = "provider continuation state"
+
+    def post(url, **kwargs):
+        requests.append(kwargs["json"])
+        message = assistant if len(requests) == 1 else {"role": "assistant", "content": "Done"}
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    monkeypatch.setattr(httpx, "post", post)
+    model = ChatModel("deepseek-flash", "https://api.deepseek.com", "test-only")
+    messages = [{"role": "user", "content": "List files"}]
+    messages.append(model.complete(messages, []))
+    messages.append({"role": "tool", "tool_call_id": "call-1", "content": "[]"})
+    assert model.complete(messages, [])["content"] == "Done"
+    assert requests[1]["messages"][1]["reasoning_content"] == "provider continuation state"

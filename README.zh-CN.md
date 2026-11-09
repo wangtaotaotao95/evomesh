@@ -10,7 +10,7 @@ Agent 的不流畅可能来自 skill、tool、soul、ReAct 循环或任意源码
 
 **个人助手与开发框架共用 `AgentApp`，不是两个分叉产品。** 记忆、会话、工具、后台任务、定时任务、委派和进化都可以通过 Python API 复用。
 
-当前为 **v0.4 alpha**。本版增加了分步计划、带出处的知识检索、按需技能、上下文预算和行为评测，继续共用持久任务运行时和框架入口；不宣称已经完整达到 Hermes/OpenMuse 的产品成熟度。浏览器接管、移动端、邮件日历渠道、模型 token 流式输出和自动集群发布等仍有差距，详见[逐项对齐表](docs/alignment.md)。
+当前为 **v0.5 alpha**。本版增加交互式 Chromium 浏览器、Python/JavaScript 执行、文件搜索/精确编辑，以及不依赖报错的主动源码检查和可选自动验证集成；不宣称已经完整达到 Hermes/OpenMuse 的产品成熟度。浏览器接管、移动端、邮件日历渠道、模型 token 流式输出和自动集群发布等仍有差距，详见[逐项对齐表](docs/alignment.md)。
 
 ## 安装后，两种用法
 
@@ -61,6 +61,10 @@ CLI 自动读取当前目录的 `evomesh.toml`，也支持 `--config`。其中�
 | 执行过程 | `run --events`、任务事件记录 | 事件回调、取消检查、工具调用策略 |
 | 工具扩展 | 配置 Python 插件和 MCP 服务 | `@tool`、`app.register()` |
 | 终端 | 显式开启 local / docker | 可替换终端工具 |
+| 浏览器 | open / snapshot / click / fill / back / screenshot | 每次任务独立的 `BrowserSession` |
+| 代码执行 | `execute_code`：Python、local 模式下的 Node.js | 与 Terminal 共用 local / docker 后端 |
+| 文件操作 | `search_files` / `edit_file` | 文件行号证据、唯一匹配编辑 |
+| 主动进化 | 空闲 worker 周期性检查全域源码 | `app.evolve_once()`、SQL 租约、可选自动验证合并 |
 | 网页读取 | 配置允许访问的 HTTPS 域名 | 文本提取工具；不等于交互浏览器 |
 | 多 Agent 委派 | 给协调 Agent 注册委派工具 | `Team.run()` / `Team.as_tool()` |
 | 多实例 | API 副本、独立任务进程、共享 MySQL | 相同运行时、租约和命名空间 |
@@ -116,7 +120,13 @@ allowed_hosts = ["example.com"]
 project_tools = ["python", "/绝对路径/server.py"]
 ```
 
-MCP 当前支持可信 stdio 服务的工具发现与调用，并维护服务会话。终端默认关闭；local 以当前用户权限运行，docker 使用非 root、禁用网络、只读工作区的受限容器。网页工具只读取允许域名的文本，不支持登录浏览器、JS 页面操作或人工接管。
+MCP 当前支持可信 stdio 服务的工具发现与调用，并维护服务会话。终端默认关闭；local 以当前用户权限运行，docker 使用非 root、禁用网络、只读工作区的受限容器。`read_web` 读取域名白名单内的文本；可选 Chromium 浏览器支持 JS 页面操作，任务内保留页面状态，任务结束关闭。它不复用个人浏览器登录，也不支持人工接管。详见[工具与主动进化配置](docs/computer-and-proactive.md)。
+
+## 主动全域进化
+
+配置 `proactive_evolution = true` 后，console/task-worker 在空闲时按 `evolution_interval_seconds` 主动检查源码，即使没有错误记录也能发现改进机会。实例通过共享 SQL 租约协调，同一项目同时只运行一轮检查；发现必须引用读过的源码，提案关联检查证据。
+
+配置 `evolution_checks` 后会继续验证并合入 `evolution/main`；不配置时保留待集成提案。检查失败不会发布候选代码。运行实例升级仍需显式部署，不会在任务中热替换代码。也可用 `evomesh evolve --force` 或 `app.evolve_once(force=True)` 手动立即触发，活跃租约不能被强制覆盖。
 
 ## 全栈进化仍是核心
 

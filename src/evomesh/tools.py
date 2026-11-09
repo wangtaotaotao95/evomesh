@@ -19,6 +19,7 @@ class Tool:
     handler: Callable[..., Any]
     source_paths: tuple[str, ...] = ()
     capability: str = "tools"
+    result_is_error: Callable[[str], bool] | None = None
 
     def __post_init__(self):
         import re
@@ -92,6 +93,41 @@ def workspace_tools(root: Path) -> list[Tool]:
             if not p.name.startswith(".")
         )[:200]
 
+    def edit_file(path: str, old: str, new: str) -> str:
+        content = read_file(path)
+        if not old or content.count(old) != 1:
+            raise ValueError("Expected exactly one match; read the file before editing")
+        return write_file(path, content.replace(old, new, 1))
+
+    def search_files(query: str, path: str = ".") -> dict:
+        import os
+
+        if not query:
+            raise ValueError("Search query must not be empty")
+        base = resolve(path)
+        matches, scanned = [], 0
+        for directory, dirs, files in os.walk(base, followlinks=False):
+            dirs[:] = sorted(
+                d for d in dirs if not d.startswith(".") and not (Path(directory) / d).is_symlink()
+            )
+            for name in sorted(files):
+                if name.startswith("."):
+                    continue
+                scanned += 1
+                if scanned > 1000:
+                    return {"matches": matches, "truncated": True}
+                relative = str((Path(directory) / name).relative_to(root))
+                try:
+                    content = read_file(relative)
+                except (ValueError, OSError, UnicodeError):
+                    continue
+                for number, line in enumerate(content.splitlines(), 1):
+                    if query in line:
+                        matches.append({"path": relative, "line": number, "text": line[:500]})
+                        if len(matches) >= 100:
+                            return {"matches": matches, "truncated": True}
+        return {"matches": matches, "truncated": False}
+
     path_schema = object_schema({"path": {"type": "string"}})
     return [
         Tool("read_file", "Read a UTF-8 file in your workspace.", path_schema, read_file),
@@ -111,6 +147,22 @@ def workspace_tools(root: Path) -> list[Tool]:
             "List a workspace directory; use '.' for its root.",
             path_schema,
             list_files,
+        ),
+        Tool(
+            "edit_file",
+            "Replace exactly one literal match in a workspace text file.",
+            object_schema({key: {"type": "string"} for key in ("path", "old", "new")}),
+            edit_file,
+            source_paths=("src/evomesh/tools.py",),
+        ),
+        Tool(
+            "search_files",
+            "Search workspace text by literal substring, returning file/line evidence.",
+            object_schema(
+                {"query": {"type": "string", "minLength": 1}, "path": {"type": "string"}}, ["query"]
+            ),
+            search_files,
+            source_paths=("src/evomesh/tools.py",),
         ),
     ]
 

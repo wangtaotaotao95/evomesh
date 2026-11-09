@@ -4,7 +4,7 @@
 
 The lower-level `Agent` task loop uses a model and registered tools to complete a task. `SOUL.md` and `skills/*/SKILL.md` are loaded at agent construction. The CLI bounds iterations; tools validate JSON Schema arguments. Errors become concise observations without raw task arguments.
 
-The evolution loop reads recent shared observations, inspects a pinned Git revision, and submits file replacements. A proposal does not execute on submission. Reflection is explicit (`reflect`, `/reflect`) or enabled after task friction (`--auto-reflect`). The current reflector uses the latest 20 project observations; it does not yet track observation consumption or score competing proposals.
+The evolution loop reads recent shared observations, inspects a pinned Git revision, and submits file replacements. A proposal does not execute on submission. Reflection is explicit (`reflect`, `/reflect`), enabled after task friction (`--auto-reflect`), or proactively triggered by an idle worker (`proactive_evolution=true`). Active reviews inspect pinned sources even with no failures, record source-review evidence and optionally invoke the gated integrator. Project-wide SQL leases and cooldowns coordinate replicas; manual `evolve --force` skips cooldown, never a live lease. The current reflector uses the latest 20 project observations; it does not yet track observation consumption or score competing proposals.
 
 ## Storage
 

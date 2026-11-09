@@ -112,7 +112,7 @@ class Store:
 
     def initialize(self) -> None:
         metadata.create_all(self.engine)
-        from . import channel_store, cognition, learning  # noqa: F401 — register tables
+        from . import channel_store, cognition, learning, proactive  # noqa: F401 — register tables
         from .runtime_store import metadata as runtime_metadata
 
         runtime_metadata.create_all(self.engine)

@@ -10,7 +10,7 @@ Multi-instance operation. SQLite or MySQL. Evolution across the whole agent stac
 [![CI](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml/badge.svg)](https://github.com/wangtaotaotao95/evomesh/actions/workflows/ci.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
-![Alpha](https://img.shields.io/badge/status-v0.4_alpha-orange)
+![Alpha](https://img.shields.io/badge/status-v0.5_alpha-orange)
 
 [中文](README.zh-CN.md) · [Web console](docs/console.md) · [Channels](docs/channels.md) · [Framework guide](docs/framework.md) · [Capability alignment](docs/alignment.md) · [Deployment](docs/deployment.md)
 
@@ -20,7 +20,7 @@ Agent friction can come from a skill, a missing tool, its soul, the ReAct loop, 
 
 The assistant and framework use **the same `AgentApp` runtime**. Memory, conversations, tools, background tasks, schedules, delegation, and evolution are reusable APIs, not features trapped inside a CLI.
 
-**v0.4 is an alpha, not full Hermes/OpenMuse parity.** It adds persistent plans, cited workspace retrieval, on-demand skills, context budgeting, repeat detection, run metrics and behavioral evaluation on top of the web/channel runtime. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
+**v0.5 is an alpha, not full Hermes/OpenMuse parity.** It adds per-task Chromium browsing, Python/JavaScript execution, file search/editing and proactive whole-stack source review with optional validated integration. Interactive browser takeover, mobile apps, native email/calendar channels, token streaming, and automatic fleet rollout remain gaps. See the [explicit capability matrix](docs/alignment.md).
 
 ## Two ways to start
 
@@ -80,6 +80,10 @@ Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use 
 | Recurring work | `schedule add --every 3600`; task worker | Transactional schedule tick → task queue |
 | Progress and control | `run --events`, task event receipts | Event callbacks, cancellation, tool policy hooks |
 | Terminal | Opt-in local or restricted Docker backend | `terminal_tool` |
+| Browser | Opt-in Chromium: open, snapshot, click, fill, back, screenshot | `BrowserSession`, per-run lifecycle |
+| Code execution | `execute_code`: Python / local Node.js | `execute_code_tool`, local/Docker backend |
+| File search/edit | `search_files`, `edit_file` | Exact-match editing and file/line evidence |
+| Proactive evolution | Idle worker reviews code on a shared interval | `app.evolve_once()`, SQL leases, optional integration checks |
 | Public web reading | Explicit HTTPS host allowlist | `web_tool`; text extraction, no JS browser |
 | MCP tools | Configured trusted stdio servers | Persistent `MCPConnection`, namespaced `Tool` objects |
 | Custom integrations | Trusted plugin modules | `@tool`, `app.register`, replaceable `Model` |
@@ -139,6 +143,8 @@ evomesh evaluate evals/offline.json --factory examples.evaluation_factory:create
 Plans track progress; they do not automatically execute a workflow. Retrieval is bounded lexical search, not embeddings. The agent receives a skill catalog and loads selected skill bodies only when needed. Context budgeting measures characters, not provider tokens, and does not invent a summary.
 
 Every run records owner-scoped call/error counts, duration, context pressure and revision metadata. Shared friction points to the affected capability/source paths; reflection proposals link actual same-project observation IDs. Custom tools can declare `source_paths` and `capability` so their implementations participate in the same process. [Agent capabilities and evolution guide](docs/agent-capabilities.md).
+
+See [computer tools and proactive evolution](docs/computer-and-proactive.md) for installation, configuration, framework APIs and limits.
 
 ## The evolution loop
 
@@ -202,7 +208,7 @@ SQLite supports multiple processes on **one host**. MySQL supports cross-host wo
 
 - Persistence is private application data: `AgentApp` saves completed conversations and tool results. Protect the database; owner namespaces are not database-level tenant isolation. Low-level `Agent` remains in-memory.
 - Local terminal and MCP servers execute trusted code with host-user permissions. Docker terminal is opt-in, nonroot, network-disabled, resource-limited, and mounts the workspace read-only. It is not an interactive desktop.
-- The web tool reads allowlisted text pages. It does not perform browser login, JS execution or takeover; DNS preflight is not a substitute for an egress firewall.
+- The text web tool reads allowlisted pages. Optional Chromium browsing runs JavaScript in a fresh per-task profile with public HTTPS request checks, no saved personal login and no desktop takeover. DNS preflight is not a substitute for an egress firewall.
 - Detached worktrees are not an OS sandbox. Candidate tests execute code. Use restricted runners and independent evaluation before deploying untrusted proposals.
 - Tests validate behavior and consistency, not whether model-written changes improve real task outcomes. Live-provider quality and autonomy benchmarks are not claimed.
 
