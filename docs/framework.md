@@ -98,6 +98,33 @@ States: `queued → running → succeeded/failed`; cancellation uses `cancelling
 
 The session save and task completion are separate transactions. After a crash, inspect saved history and task events before explicitly retrying an interrupted task. `asyncio` coroutine cancellation does not forcibly terminate the thread used by `arun`; use the task cancellation API for durable work.
 
+## Independent proactive reviews
+
+For independent active source reviews, use `ProactiveEvolution.run` in your managed
+worker thread/process. Unlike `app.work_once()`, it does not consume user tasks or
+wait for their queue to empty:
+
+```python
+from threading import Event, Thread
+from evomesh.proactive import ProactiveEvolution
+
+stop = Event()
+reviewer = Thread(target=ProactiveEvolution(app).run, args=(stop,),
+                  kwargs={"poll_interval": 60, "on_cycle": print})
+reviewer.start()
+try:
+    answer = app.run("Help with my task")
+finally:
+    stop.set()
+    reviewer.join()  # Finish the active cycle before closing app/store.
+```
+
+This is explicit opt-in even when `config.proactive_evolution` is false. The latter
+controls idle reviews inside `work_once()`. Dedicated and idle reviews share SQL
+leases/cooldowns, and optional `evolution_checks` still gate integration. Use a
+thread-safe model or `model_factory` for concurrent applications. See
+[worker configuration and shutdown](computer-and-proactive.md).
+
 ## Named delegation
 
 ```python

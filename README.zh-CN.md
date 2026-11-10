@@ -64,7 +64,7 @@ CLI 自动读取当前目录的 `evomesh.toml`，也支持 `--config`。其中�
 | 浏览器 | open / snapshot / click / fill / back / screenshot | 每次任务独立的 `BrowserSession` |
 | 代码执行 | `execute_code`：Python、local 模式下的 Node.js | 与 Terminal 共用 local / docker 后端 |
 | 文件操作 | `search_files` / `edit_file` | 文件行号证据、唯一匹配编辑 |
-| 主动进化 | 空闲 worker 周期性检查全域源码 | `app.evolve_once()`、SQL 租约、可选自动验证合并 |
+| 主动进化 | 空闲检查或独立 `evolution-worker` 周期性检查源码 | `app.evolve_once()` / `ProactiveEvolution.run()`、SQL 租约、可选自动验证合并 |
 | 网页读取 | 配置允许访问的 HTTPS 域名 | 文本提取工具；不等于交互浏览器 |
 | 多 Agent 委派 | 给协调 Agent 注册委派工具 | `Team.run()` / `Team.as_tool()` |
 | 多实例 | API 副本、独立任务进程、共享 MySQL | 相同运行时、租约和命名空间 |
@@ -125,6 +125,8 @@ MCP 当前支持可信 stdio 服务的工具发现与调用，并维护服务会
 ## 主动全域进化
 
 配置 `proactive_evolution = true` 后，console/task-worker 在空闲时按 `evolution_interval_seconds` 主动检查源码，即使没有错误记录也能发现改进机会。实例通过共享 SQL 租约协调，同一项目同时只运行一轮检查；发现必须引用读过的源码，提案关联检查证据。
+
+用户任务较多时，可先执行 `evomesh init`，再独立运行 `evomesh evolution-worker --interval 60`。它只负责主动进化，不消费用户任务；轮询频率不会绕过数据库中的进化周期和租约。此时可将任务进程的 `proactive_evolution` 设为 `false`，避免它占用用户任务执行时间。专用进程收到 SIGINT/SIGTERM 后完成当前轮次再退出。`--once` 只执行一轮到期检查，框架也可通过 `ProactiveEvolution.run(stop_event, ...)` 托管运行。
 
 主动检查使用独立的 `evolution_max_steps`（默认 32，范围 1–100），不占用普通对话的步数配置。源码按字符分页读取，返回 `next_offset` 供继续读取，避免大文件被工具输出上限截断；达到步数上限时明确记录 `StepLimitExceeded`。提高预算会增加潜在模型调用量，不保证一定产生有效提案。
 

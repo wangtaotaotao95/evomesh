@@ -1,6 +1,7 @@
 """SQL-fenced, project-wide proactive review intervals shared by all replicas."""
 
 import json
+import math
 import threading
 import time
 import uuid
@@ -30,6 +31,26 @@ class ProactiveEvolution:
         self.engine = app.store.engine
         self.project = app.config.project
         self.lease_seconds = lease_seconds
+
+    def run(self, stop: threading.Event, *, poll_interval: float = 60, on_cycle=None):
+        """Review independently of user tasks until stop is set.
+
+        Stopping wakes an idle worker immediately; an active cycle finishes its
+        validation/report before stopping. SQL cooldowns, not polling frequency,
+        control inference. The caller owns the app/store and their cleanup.
+        """
+        if (
+            isinstance(poll_interval, bool)
+            or not isinstance(poll_interval, (int, float))
+            or not math.isfinite(poll_interval)
+            or poll_interval <= 0
+        ):
+            raise ValueError("poll_interval must be a positive finite number")
+        while not stop.is_set():
+            result = self.once()
+            if result is not None and on_cycle is not None:
+                on_cycle(result)
+            stop.wait(poll_interval)
 
     def status(self):
         with self.engine.connect() as conn:

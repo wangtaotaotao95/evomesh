@@ -72,4 +72,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Exact source-edit proposals compiled against pinned Git blobs, preserving untouched content
 - [ ] Cross-turn browser profiles and interactive takeover
 - [ ] Persistent code kernels and programmatic tool composition
-- [ ] Dedicated review worker to avoid idle-worker scheduling delays under sustained load
+- [x] Dedicated review worker to avoid idle-worker scheduling delays under sustained load

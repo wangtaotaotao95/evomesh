@@ -5,7 +5,9 @@ import json
 import os
 import secrets
 import shlex
+import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -31,10 +33,20 @@ def parser() -> argparse.ArgumentParser:
     new = commands.add_parser("new", help="Create a ready-to-run assistant or framework project")
     new.add_argument("destination", type=Path)
     new.add_argument("--template", choices=["assistant", "framework"], default="assistant")
-    for name in ("run", "chat", "reflect", "evolve", "serve", "console", "task-worker"):
+    for name in (
+        "run",
+        "chat",
+        "reflect",
+        "evolve",
+        "serve",
+        "console",
+        "task-worker",
+        "evolution-worker",
+    ):
         sub = commands.add_parser(name)
-        if name == "evolve":
+        if name in {"evolve", "evolution-worker"}:
             sub.add_argument("--evolution-max-steps", type=int)
+        if name == "evolve":
             sub.add_argument(
                 "--force", action="store_true", help="Ignore cooldown, never active leases"
             )
@@ -47,9 +59,11 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--host", default="127.0.0.1")
             sub.add_argument("--port", type=int, default=8765)
             sub.add_argument("--with-worker", action="store_true")
-        if name == "task-worker":
+        if name in {"task-worker", "evolution-worker"}:
             sub.add_argument("--once", action="store_true")
-            sub.add_argument("--interval", type=float, default=1)
+            sub.add_argument(
+                "--interval", type=float, default=60 if name == "evolution-worker" else 1
+            )
         sub.add_argument("--demo", action="store_true", default=None)
         sub.add_argument("--workspace", type=Path)
         sub.add_argument("--repo", type=Path)
@@ -192,7 +206,16 @@ def dispatch(args, store: Store, cfg: Config) -> None:
     elif args.command == "init":
         store.initialize()
         print("Evolution and application storage initialized.")
-    elif args.command in {"run", "chat", "reflect", "evolve", "serve", "console", "task-worker"}:
+    elif args.command in {
+        "run",
+        "chat",
+        "reflect",
+        "evolve",
+        "serve",
+        "console",
+        "task-worker",
+        "evolution-worker",
+    }:
         app = AgentApp(
             cfg,
             store=store,
@@ -228,6 +251,22 @@ def dispatch(args, store: Store, cfg: Config) -> None:
                     server.server_close()
             elif args.command == "evolve":
                 display(app.evolve_once(force=args.force))
+            elif args.command == "evolution-worker":
+                from .proactive import ProactiveEvolution
+
+                worker = ProactiveEvolution(app)
+                if args.once:
+                    display(worker.once())
+                else:
+                    stop = threading.Event()
+                    previous = {}
+                    try:
+                        for signum in (signal.SIGINT, signal.SIGTERM):
+                            previous[signum] = signal.signal(signum, lambda *_: stop.set())
+                        worker.run(stop, poll_interval=args.interval, on_cycle=display)
+                    finally:
+                        for signum, handler in previous.items():
+                            signal.signal(signum, handler)
             elif args.command == "reflect":
                 if cfg.demo:
                     raise ValueError("Reflection requires a real tool-capable model")
@@ -390,7 +429,7 @@ def main() -> None:
             Path(url.database).parent.mkdir(parents=True, exist_ok=True)
         store = Store(cfg.database_url)
         # Schema creation is explicit for deployed workers; generated project startup is simple.
-        if args.command not in {"serve", "task-worker", "worker", "integrate"}:
+        if args.command not in {"serve", "task-worker", "evolution-worker", "worker", "integrate"}:
             store.initialize()
         dispatch(args, store, cfg)
     except KeyboardInterrupt:

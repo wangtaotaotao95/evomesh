@@ -27,9 +27,41 @@ evolution_branch = "evolution/main"
 Use a real tool-capable model (`demo=false`), a committed Git source repository,
 and `evomesh console` or `evomesh task-worker`. The worker checks for proactive work
 when the user-task queue is empty. A busy queue delays reviews; reviews themselves
-occupy that worker until finished. Use separate task-worker replicas if necessary.
+occupy that worker until finished. Use the dedicated worker below to separate reviews.
 Background inference has provider costs; enable it deliberately. Framework defaults
 remain off so importing or creating an app does not silently begin paid inference.
+
+For predictable reviews under a sustained task backlog, run a dedicated process:
+
+```bash
+evomesh --config evomesh.toml init
+evomesh --config evomesh.toml evolution-worker --interval 60
+# Or check for one due review, then exit:
+evomesh --config evomesh.toml evolution-worker --once
+```
+
+Set `proactive_evolution=false` on task/console replicas when the dedicated worker
+should own all review execution. That setting controls only their idle reviews;
+explicitly starting `evolution-worker` enables reviews independently. The dedicated
+worker never claims user tasks, ticks their schedules or delivers channel replies.
+`--interval` is the SQL polling interval, not the inference interval: project-wide
+`evolution_interval_seconds` and leases still govern when a review can run. Multiple
+dedicated/idle workers share these same constraints. The daemon prints reports only
+for executed cycles; `--once` prints null when nothing is due. There is no daemon
+`--force` option to bypass cooldowns.
+
+The daemon handles SIGINT/SIGTERM by finishing the current review/validation/report,
+then exiting; an idle wait wakes immediately. Allow enough shutdown grace for the
+bounded model and validation calls. A hard kill still relies on lease expiry and
+the existing recovery contracts. Initialize the schema before starting deployed
+workers, and point integration-enabled workers at the same canonical Git object store.
+
+Framework applications can run `ProactiveEvolution(app).run(stop_event,
+poll_interval=60, on_cycle=callback)` in their managed worker thread or process.
+Set the `threading.Event` to stop after the current cycle. The caller owns app/store
+cleanup. An optional callback receives completed/failed cycle reports; cooldown
+polls are silent. Unhandled infrastructure or callback errors exit the worker so a
+supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 
 ## Tool behavior
 

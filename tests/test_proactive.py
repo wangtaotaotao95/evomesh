@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -159,3 +160,114 @@ def test_review_has_independent_step_budget_and_diagnostic(store, project, tmp_p
 def test_review_step_budget_validation(budget):
     with pytest.raises(ValueError, match="evolution_max_steps"):
         Config(evolution_max_steps=budget).validate()
+
+
+def test_dedicated_worker_reviews_with_user_queue_backlog(store, project, tmp_path):
+    app = application(store, project, tmp_path, proactive_evolution=False)
+    task_id = app.submit("This queued user task must not be consumed by the review worker")
+    stop, reports = threading.Event(), []
+
+    def completed(report):
+        reports.append(report)
+        stop.set()
+
+    ProactiveEvolution(app).run(stop, poll_interval=3600, on_cycle=completed)
+    assert len(reports) == 1 and reports[0]["status"] == "succeeded"
+    assert reports[0]["proposals"]
+    assert app.state.task(task_id)["status"] == "queued"
+
+
+def test_worker_stop_wakes_cooldown_wait_without_more_inference(store, project, tmp_path):
+    app = application(store, project, tmp_path)
+    worker = ProactiveEvolution(app)
+    assert worker.once()["status"] == "succeeded"
+    idle, stop = threading.Event(), threading.Event()
+    original = worker.once
+
+    def cooldown():
+        assert original() is None
+        idle.set()
+        return None
+
+    worker.once = cooldown
+    reports = []
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(worker.run, stop, poll_interval=3600, on_cycle=reports.append)
+        try:
+            assert idle.wait(5)
+        finally:
+            stop.set()
+        future.result(timeout=5)
+    assert reports == []
+
+
+def test_stop_during_cycle_finishes_report_then_exits(store, project, tmp_path):
+    app = application(store, project, tmp_path)
+    stop = threading.Event()
+
+    class StopDuringReview(ReviewModel):
+        def complete(self, messages, tools):
+            stop.set()
+            return super().complete(messages, tools)
+
+    app.model_factory = StopDuringReview
+    reports = []
+    ProactiveEvolution(app).run(stop, poll_interval=3600, on_cycle=reports.append)
+    assert len(reports) == 1 and reports[0]["proposals"]
+    assert ProactiveEvolution(app).status()["lease_until"] == 0
+
+
+@pytest.mark.parametrize("interval", [0, -1, float("inf"), float("nan"), True, "60"])
+def test_worker_rejects_invalid_poll_interval(store, project, tmp_path, interval):
+    app = application(store, project, tmp_path)
+    with pytest.raises(ValueError, match="positive finite"):
+        ProactiveEvolution(app).run(threading.Event(), poll_interval=interval)
+    assert ProactiveEvolution(app).status() is None
+
+
+def test_evolution_worker_cli_once_preserves_queue_and_cooldown(
+    store, project, tmp_path, monkeypatch, capsys
+):
+    from evomesh import cli
+
+    app = application(store, project, tmp_path)
+    task_id = app.submit("Pending user work")
+    monkeypatch.setattr(cli, "AgentApp", lambda *a, **kw: app)
+    args = cli.parser().parse_args(["evolution-worker", "--once"])
+    cli.dispatch(args, store, app.config)
+    assert json.loads(capsys.readouterr().out)["status"] == "succeeded"
+    assert app.state.task(task_id)["status"] == "queued"
+    cli.dispatch(args, store, app.config)
+    assert json.loads(capsys.readouterr().out) is None
+
+
+def test_evolution_worker_cli_signal_finishes_cycle_and_restores_handlers(
+    store, project, tmp_path, monkeypatch, capsys
+):
+    import signal
+
+    from evomesh import cli
+
+    app = application(store, project, tmp_path)
+    previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+    handlers = dict(previous)
+
+    def install(signum, handler):
+        old = handlers[signum]
+        handlers[signum] = handler
+        return old
+
+    class StopModel(ReviewModel):
+        def complete(self, messages, tools):
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+            return super().complete(messages, tools)
+
+    app.model_factory = StopModel
+    monkeypatch.setattr(cli, "AgentApp", lambda *a, **kw: app)
+    monkeypatch.setattr(signal, "signal", install)
+    cli.dispatch(
+        cli.parser().parse_args(["evolution-worker", "--interval", "3600"]), store, app.config
+    )
+    assert json.loads(capsys.readouterr().out)["status"] == "succeeded"
+    assert ProactiveEvolution(app).status()["lease_until"] == 0
+    assert handlers == previous

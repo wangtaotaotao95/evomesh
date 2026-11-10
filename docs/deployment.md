@@ -24,6 +24,15 @@ The Compose example now shares a `personal-data` volume between API replicas and
 
 ## One host: SQLite
 
+For dedicated proactive reviews, initialize schema once, then run
+`evomesh --config evomesh.toml evolution-worker --interval 60` beside the console
+or task workers. Disable `proactive_evolution` on those task replicas to reserve
+their execution time for user work. The dedicated worker uses the same project
+SQL lease/cooldown on SQLite or MySQL, and requires real model configuration and a
+committed source repo. Its SIGINT/SIGTERM shutdown waits for the active cycle;
+configure process-supervisor grace time accordingly. See the
+[worker API and limits](computer-and-proactive.md).
+
 ```bash
 evomesh new my-assistant
 cd my-assistant
