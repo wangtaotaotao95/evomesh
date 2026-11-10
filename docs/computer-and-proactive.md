@@ -164,6 +164,20 @@ contain source findings and safe status metadata; private conversations and API
 credentials must never be copied into a proposal. `/evolution-status` (authenticated)
 exposes the current cycle, next due time and report without its lease token.
 
+If reflection saves a proposal and then hits its step limit, is cancelled or loses
+the model connection, the cycle remains `failed` but its report retains the saved
+`proposals` IDs and a safe `error` type. Raw provider errors are not persisted.
+Integration does not run after incomplete reflection. An integration-stage error
+also preserves the successful reflection's proposal IDs. Inspect those records
+before retrying; ordinary cooldowns still apply, and pending proposals can use the
+existing integration worker. A saved proposal is not a validated or deployed change.
+
+Framework calls to `Agent.reflect()` raise `evomesh.agent.ReflectionFailed` when
+reflection fails after saving proposals. Its `proposal_ids` and `error_type`
+attributes allow callers to recover the receipt. Failures before any proposal keep
+their original exception types. This covers handled exceptions, not a hard process
+kill; after a crash, inspect the durable proposal ledger.
+
 An empty `evolution_checks` records proposals only. Non-empty command arrays invoke
 the existing `Integrator` for at most one pending proposal after each review. Run
 all desired regression/behavioral gates here; candidate code executes in a detached

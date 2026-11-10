@@ -148,8 +148,13 @@ class ProactiveEvolution:
                     branch=cfg.evolution_branch,
                 ).once()
         except Exception as exc:
+            from .agent import ReflectionFailed
+
             # Shared state never records task text, provider responses or credentials.
-            status, report = "failed", {"error": type(exc).__name__}
+            status = "failed"
+            report["error"] = type(exc).__name__
+            if isinstance(exc, ReflectionFailed):
+                report.update(proposals=exc.proposal_ids, error=exc.error_type)
         finally:
             stop.set()
             thread.join()

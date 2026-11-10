@@ -162,6 +162,79 @@ def test_review_step_budget_validation(budget):
         Config(evolution_max_steps=budget).validate()
 
 
+@pytest.mark.parametrize("failure", ["budget", "provider", "cancelled"])
+def test_failed_review_retains_saved_proposals_and_skips_integration(
+    store, project, tmp_path, monkeypatch, failure
+):
+    from evomesh.agent import RunCancelled
+
+    app = application(
+        store,
+        project,
+        tmp_path,
+        evolution_max_steps=3 if failure == "budget" else 8,
+        evolution_checks=[[sys.executable, "-c", "print('gate')"]],
+    )
+
+    class InterruptedReview(ReviewModel):
+        def complete(self, messages, tools):
+            if self.count == 3:
+                error = RunCancelled if failure == "cancelled" else RuntimeError
+                raise error("PRIVATE_PROVIDER_DETAIL")
+            return super().complete(messages, tools)
+
+    def must_not_integrate(*args):
+        pytest.fail("Incomplete reviews must leave saved proposals pending")
+
+    monkeypatch.setattr("evomesh.evolution.Integrator.once", must_not_integrate)
+    app.model_factory = InterruptedReview
+    result = app.evolve_once()
+    expected = {
+        "budget": "StepLimitExceeded",
+        "provider": "RuntimeError",
+        "cancelled": "RunCancelled",
+    }[failure]
+    assert result["status"] == "failed" and result["error"] == expected
+    rows = store.list(project)
+    assert len(rows) == 1 and rows[0]["status"] == "pending"
+    assert result["proposals"] == [rows[0]["id"]]
+    report = ProactiveEvolution(app).status()["report"]
+    assert report == {"error": expected, "proposals": result["proposals"]}
+    assert "PRIVATE_PROVIDER_DETAIL" not in json.dumps(report)
+    assert app.evolve_once() is None  # Cooldown still applies; no blind replay.
+
+
+def test_integrator_error_keeps_successful_reflection_receipt(
+    store, project, tmp_path, monkeypatch
+):
+    app = application(
+        store, project, tmp_path, evolution_checks=[[sys.executable, "-c", "print('gate')"]]
+    )
+
+    def unavailable(*args):
+        raise OSError("PRIVATE_RUNNER_DETAIL")
+
+    monkeypatch.setattr("evomesh.evolution.Integrator.once", unavailable)
+    result = app.evolve_once()
+    identifier = store.list(project)[0]["id"]
+    assert result == {"status": "failed", "proposals": [identifier], "error": "OSError"}
+    assert ProactiveEvolution(app).status()["report"] == {
+        "proposals": [identifier],
+        "error": "OSError",
+    }
+
+
+def test_framework_reflection_exception_exposes_saved_receipt(store, project, tmp_path):
+    from evomesh.agent import ReflectionFailed
+
+    app = application(store, project, tmp_path, max_steps=3)
+    agent = app.agent()
+    with pytest.raises(ReflectionFailed) as raised:
+        agent.reflect(proactive=True)
+    assert raised.value.error_type == "StepLimitExceeded"
+    assert raised.value.proposal_ids == [store.list(project)[0]["id"]]
+
+
 def test_dedicated_worker_reviews_with_user_queue_backlog(store, project, tmp_path):
     app = application(store, project, tmp_path, proactive_evolution=False)
     task_id = app.submit("This queued user task must not be consumed by the review worker")

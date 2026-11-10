@@ -34,6 +34,15 @@ class StepLimitExceeded(RuntimeError):
     pass
 
 
+class ReflectionFailed(RuntimeError):
+    """Reflection stopped after durable proposals were saved; do not replay blindly."""
+
+    def __init__(self, proposal_ids: list[str], error: Exception):
+        self.proposal_ids = list(proposal_ids)
+        self.error_type = type(error).__name__
+        super().__init__(f"{self.error_type} after saving {len(self.proposal_ids)} proposal(s)")
+
+
 class Agent:
     def __init__(
         self,
@@ -472,18 +481,23 @@ You only submit proposals; a separate worker validates and integrates them."""
             ),
             cancelled=self.cancelled,
         )
-        reflector.run(
-            "Capability/source catalog (hints, not limits; any tracked text code may evolve):\n"
-            + json.dumps(capability_catalog(repo, self.tools.values()), ensure_ascii=False)
-            + "\nReview these observations and propose justified improvements:\n"
-            + json.dumps(observations, ensure_ascii=False)
-            + "\nRecent proposal summaries (avoid duplicates):\n"
-            + json.dumps(
-                [
-                    {k: row[k] for k in ("id", "target", "status", "rationale")}
-                    for row in self.store.list(self.project, limit=10)
-                ],
-                ensure_ascii=False,
+        try:
+            reflector.run(
+                "Capability/source catalog (hints, not limits; any tracked text code may evolve):\n"
+                + json.dumps(capability_catalog(repo, self.tools.values()), ensure_ascii=False)
+                + "\nReview these observations and propose justified improvements:\n"
+                + json.dumps(observations, ensure_ascii=False)
+                + "\nRecent proposal summaries (avoid duplicates):\n"
+                + json.dumps(
+                    [
+                        {k: row[k] for k in ("id", "target", "status", "rationale")}
+                        for row in self.store.list(self.project, limit=10)
+                    ],
+                    ensure_ascii=False,
+                )
             )
-        )
+        except Exception as exc:
+            if recorded:
+                raise ReflectionFailed(recorded, exc) from exc
+            raise
         return recorded
