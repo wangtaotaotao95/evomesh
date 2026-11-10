@@ -84,6 +84,36 @@ include JSON escaping in their size budget, so large or escape-heavy files remai
 valid JSON below the tool output limit. Files remain bounded to 100 KB. Never build
 a full replacement from only one partial source page.
 
+For a localized improvement, `propose_evolution` accepts `edits` instead of `content`
+for an existing file. Read the relevant source page first, then provide unique
+literal matches (including surrounding context when necessary):
+
+```json
+{
+  "target": "tool",
+  "rationale": "Correct the result; add regression coverage in the same proposal",
+  "observation_ids": ["an-observation-id-returned-by-record_finding"],
+  "files": [
+    {"path": "tool.py", "edits": [{"old": "return 1", "new": "return 2"}]},
+    {"path": "tests/test_answer.py", "content": "from tool import answer\n\ndef test_answer():\n    assert answer() == 2\n"}
+  ]
+}
+```
+
+Each file must specify exactly one of `content` or `edits`. An edit contains `old`
+(nonempty text) and `new` (text; empty removes the matched fragment). Up to 64 edits
+apply sequentially to the pinned Git blob, never to uncommitted working files.
+Each match must be unique, including overlapping matches. Missing/ambiguous matches,
+missing files, binary sources, no-op results or results exceeding 100 KB are rejected.
+If any file fails, no proposal is saved. New files and whole-file deletion still use
+`content` (text or null). The reflector must read a file before proposing its edits.
+
+The framework API is `evomesh.evolution.make_edit_change(repo, base, path, edits)`.
+It produces the same full-content/before-hash change object as `make_change`, usable
+with `submit`. SQL records, evidence links, stale-base detection and integration
+checks remain unchanged on SQLite and MySQL. Exact editing reduces model output;
+it is not fuzzy matching, a three-way merge or a shortcut around validation.
+
 Active review uses `evolution_max_steps` (default 32), independently of the assistant's
 `max_steps` (default 12). Override one CLI run with
 `evomesh evolve --evolution-max-steps 40`. The reflector is told to reserve steps for

@@ -90,6 +90,44 @@ def make_change(repo: Path, commit: str, path: str, content: str | None) -> dict
     }
 
 
+def make_edit_change(repo: Path, commit: str, path: str, edits: list[dict]) -> dict:
+    """Expand sequential, unique literal replacements against a pinned Git blob.
+
+    No checkout files are written. The result uses the same full-content/hash
+    contract as make_change, so SQL storage and integration gates stay identical.
+    """
+    if not isinstance(edits, list) or not 1 <= len(edits) <= 64:
+        raise ValueError("Provide 1–64 exact edits")
+    old = source_file(repo, commit, path)
+    if old is None:
+        raise ValueError("Exact edits require an existing source file")
+    if len(old) > 100_000:
+        raise ValueError("Source file exceeds 100 KB")
+    content = old.decode("utf-8")
+    if "\0" in content:
+        raise ValueError("Only UTF-8 text sources are supported")
+    for edit in edits:
+        if (
+            not isinstance(edit, dict)
+            or set(edit) != {"old", "new"}
+            or not isinstance(edit["old"], str)
+            or not edit["old"]
+            or not isinstance(edit["new"], str)
+            or "\0" in edit["old"]
+            or "\0" in edit["new"]
+        ):
+            raise ValueError("Each edit requires non-empty old and text new")
+        first = content.find(edit["old"])
+        if first == -1 or content.find(edit["old"], first + 1) != -1:
+            raise ValueError("Expected exactly one match; read more source for unique context")
+        content = content.replace(edit["old"], edit["new"], 1)
+        if len(content.encode("utf-8")) > 100_000:
+            raise ValueError("Edited source exceeds 100 KB")
+    if content.encode("utf-8") == old:
+        raise ValueError("Edits must change source")
+    return {"path": path, "before_sha256": sha(old), "content": content}
+
+
 def validate_changes(repo: Path, base: str, changes: list[dict]) -> None:
     revision(repo, base)
     seen = set()

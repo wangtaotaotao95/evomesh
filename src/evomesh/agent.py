@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .context import ContextBudgetExceeded, fit_context
-from .evolution import git, make_change, revision, source_file, submit
+from .evolution import git, make_change, make_edit_change, revision, source_file, submit
 from .learning import capability_catalog, friction_detail
 from .models import Model
 from .store import Store
@@ -290,7 +290,14 @@ class Agent:
             )
             if not evidence or set(evidence) - {r["id"] for r in observations}:
                 raise ValueError("Select evidence IDs from the observations under review")
-            changes = [make_change(repo, base, f["path"], f["content"]) for f in files]
+            changes = []
+            for file in files:
+                if "edits" in file:
+                    if file["path"] not in inspected:
+                        raise ValueError("Read source before proposing exact edits")
+                    changes.append(make_edit_change(repo, base, file["path"], file["edits"]))
+                else:
+                    changes.append(make_change(repo, base, file["path"], file["content"]))
             identifier = submit(
                 self.store,
                 repo,
@@ -359,7 +366,10 @@ class Agent:
             ),
             Tool(
                 "propose_evolution",
-                "Record full replacement files or null for deletion.",
+                "Record one proposal. Each file uses either content (full replacement or null "
+                "for deletion) or edits (sequential unique old/new literal replacements). "
+                "Read source first; use edits for small changes to existing files. "
+                "Missing/ambiguous matches reject the entire proposal without saving changes.",
                 object_schema(
                     {
                         "target": {
@@ -377,12 +387,27 @@ class Agent:
                             "type": "array",
                             "minItems": 1,
                             "maxItems": 32,
-                            "items": object_schema(
-                                {
-                                    "path": {"type": "string"},
-                                    "content": {"type": ["string", "null"]},
-                                }
-                            ),
+                            "items": {
+                                **object_schema(
+                                    {
+                                        "path": {"type": "string"},
+                                        "content": {"type": ["string", "null"]},
+                                        "edits": {
+                                            "type": "array",
+                                            "minItems": 1,
+                                            "maxItems": 64,
+                                            "items": object_schema(
+                                                {
+                                                    "old": {"type": "string", "minLength": 1},
+                                                    "new": {"type": "string"},
+                                                }
+                                            ),
+                                        },
+                                    },
+                                    ["path"],
+                                ),
+                                "oneOf": [{"required": ["content"]}, {"required": ["edits"]}],
+                            },
                         },
                     },
                     required=["target", "rationale", "files"],
@@ -433,7 +458,9 @@ You only submit proposals; a separate worker validates and integrates them."""
             "reserve steps for recording evidence and submitting a small change with regression "
             "coverage. Validation runs after submission; do not claim tests have already passed. "
             "Read source pages using next_offset when needed; do not replace a file using only "
-            "a truncated page. If the available budget is insufficient, explain the remaining "
+            "a truncated page. Prefer exact edits for localized changes: include enough old "
+            "context for a unique match, preserving all other source automatically. "
+            "If the available budget is insufficient, explain the remaining "
             "work without inventing a proposal."
             + (
                 "\nProactively review code, tests and documentation even without runtime failures. "

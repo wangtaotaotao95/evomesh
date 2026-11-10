@@ -5,7 +5,15 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import update
 
-from evomesh.evolution import Integrator, git, make_change, revision, source_file, submit
+from evomesh.evolution import (
+    Integrator,
+    git,
+    make_change,
+    make_edit_change,
+    revision,
+    source_file,
+    submit,
+)
 from evomesh.store import proposals
 
 
@@ -49,6 +57,87 @@ def test_integrates_in_separate_branch(store, repo, project):
     assert source_file(repo, result["commit"], "SOUL.md") == b"Be helpful and precise.\n"
     assert identifier in git(repo, "log", "evolution/main", "-1", "--format=%B")
     assert not git(repo, "status", "--porcelain")
+
+
+def test_exact_edits_use_pinned_blob_and_preserve_unrelated_bytes(repo):
+    original = "# 你好\r\n" + "# padding\r\n" * 2500 + "value = 1\r\n# tail\n"
+    (repo / "large.py").write_bytes(original.encode())
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Large source")
+    base = revision(repo)
+    (repo / "large.py").write_text("uncommitted user edit")
+    change = make_edit_change(
+        repo,
+        base,
+        "large.py",
+        [
+            {"old": "value = 1", "new": "value = 2"},
+            {"old": "value = 2", "new": "value = 3"},
+        ],
+    )
+    assert change["content"] == original.replace("value = 1", "value = 3")
+    assert change["before_sha256"] == make_change(repo, base, "large.py", "unused")["before_sha256"]
+    assert (repo / "large.py").read_text() == "uncommitted user edit"
+
+
+@pytest.mark.parametrize(
+    "edits",
+    [
+        [],
+        [{"old": "missing", "new": "x"}],
+        [{"old": "", "new": "x"}],
+        [{"old": "Be", "new": None}],
+        [{"old": "Be", "new": "Be"}],
+        [{"old": "Be", "new": "\0"}],
+        [{"old": "Be", "new": "x", "extra": 1}],
+        [{"old": "Be", "new": "x"}] * 65,
+        [{"old": "Be", "new": "x" * 100001}],
+        [{"old": "Be", "new": "B"}, {"old": "missing", "new": "x"}],
+    ],
+)
+def test_exact_edits_reject_invalid_sequences_without_writing(repo, edits):
+    before = (repo / "SOUL.md").read_bytes()
+    with pytest.raises(ValueError):
+        make_edit_change(repo, revision(repo), "SOUL.md", edits)
+    assert (repo / "SOUL.md").read_bytes() == before
+
+
+def test_exact_edits_reject_overlapping_matches_and_missing_files(repo):
+    (repo / "repeated.txt").write_text("aaa")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Ambiguous source")
+    base = revision(repo)
+    with pytest.raises(ValueError, match="exactly one"):
+        make_edit_change(repo, base, "repeated.txt", [{"old": "aa", "new": "b"}])
+    with pytest.raises(ValueError, match="existing"):
+        make_edit_change(repo, base, "missing.py", [{"old": "x", "new": "y"}])
+
+
+def test_exact_edit_proposals_still_detect_stale_source(store, repo, project):
+    base = revision(repo)
+    for value in (2, 3):
+        submit(
+            store,
+            repo,
+            project=project,
+            instance="a",
+            target="code",
+            rationale="Fix answer",
+            base=base,
+            changes=[
+                make_edit_change(
+                    repo,
+                    base,
+                    "tool.py",
+                    [
+                        {"old": "return 1", "new": f"return {value}"},
+                    ],
+                )
+            ],
+        )
+    integrator = worker(store, repo, project)
+    assert integrator.once()["status"] == "integrated"
+    assert integrator.once()["status"] == "conflict"
 
 
 def test_validation_failure_never_publishes(store, repo, project):

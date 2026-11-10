@@ -128,6 +128,8 @@ MCP 当前支持可信 stdio 服务的工具发现与调用，并维护服务会
 
 主动检查使用独立的 `evolution_max_steps`（默认 32，范围 1–100），不占用普通对话的步数配置。源码按字符分页读取，返回 `next_offset` 供继续读取，避免大文件被工具输出上限截断；达到步数上限时明确记录 `StepLimitExceeded`。提高预算会增加潜在模型调用量，不保证一定产生有效提案。
 
+局部修改可用 `propose_evolution` 的 `edits: [{old, new}]`，无需让模型重写整份文件。框架基于固定 Git 版本执行唯一匹配替换、保留其余源码，再生成原有的完整文件提案；任一编辑失败则整份提案不入库。五类进化目标均支持，仍经过证据关联、冲突检查和测试门禁。框架可直接调用 `make_edit_change`，详见[工具与主动进化配置](docs/computer-and-proactive.md)。
+
 配置 `evolution_checks` 后会继续验证并合入 `evolution/main`；不配置时保留待集成提案。检查失败不会发布候选代码。运行实例升级仍需显式部署，不会在任务中热替换代码。也可用 `evomesh evolve --force` 或 `app.evolve_once(force=True)` 手动立即触发，活跃租约不能被强制覆盖。
 
 ## 全栈进化仍是核心

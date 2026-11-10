@@ -1,9 +1,10 @@
 import json
+import sys
 
 import pytest
 
 from evomesh import Agent
-from evomesh.evolution import git
+from evomesh.evolution import Integrator, git, source_file
 from evomesh.models import ChatModel, DemoModel
 from evomesh.tools import workspace_tools
 
@@ -201,3 +202,79 @@ def test_source_pagination_rejects_invalid_offsets_and_limits(store, project, tm
         assert "error" in json.loads(model.received[index][-1]["content"])
     page = json.loads(model.received[4][-1]["content"])
     assert page["content"] == "" and page["next_offset"] is None
+
+
+@pytest.mark.parametrize("target", ["skill", "tool", "soul", "loop", "code"])
+def test_reflection_exact_edits_preserve_large_file_and_integrate(store, project, tmp_path, target):
+    git(tmp_path, "init", "-b", "main")
+    prefix = "# padding\n" * 2500
+    original = prefix + "def answer():\n    return 1\n# 末尾保持不变\n"
+    (tmp_path / "tool.py").write_text(original)
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "Large source")
+    model = ScriptedModel(
+        [
+            call("read_source", {"path": "tool.py", "offset": len(prefix)}),
+            call("record_finding", {"detail": "Answer should be 2", "paths": ["tool.py"]}),
+            call(
+                "propose_evolution",
+                {
+                    "target": target,
+                    "rationale": "Fix answer",
+                    "files": [
+                        {"path": "tool.py", "edits": [{"old": "return 1", "new": "return 2"}]}
+                    ],
+                },
+            ),
+            {"role": "assistant", "content": "Submitted"},
+        ]
+    )
+    identifiers = Agent(model, store, [], project=project, repo=tmp_path).reflect(proactive=True)
+    assert len(identifiers) == 1
+    row = store.list(project)[0]
+    assert row["observation_ids"] and row["target"] == target
+    result = Integrator(
+        store,
+        tmp_path,
+        project,
+        [[sys.executable, "-c", "from tool import answer; assert answer() == 2"]],
+    ).once()
+    assert result["status"] == "integrated"
+    assert source_file(tmp_path, result["commit"], "tool.py").decode() == original.replace(
+        "return 1", "return 2"
+    )
+    assert (tmp_path / "tool.py").read_text() == original
+
+
+@pytest.mark.parametrize(
+    "file",
+    [
+        {"path": "SOUL.md", "content": "bad", "edits": [{"old": "Be", "new": "Stay"}]},
+        {"path": "SOUL.md"},
+        {"path": "SOUL.md", "edits": [{"old": "missing", "new": "x"}]},
+    ],
+)
+def test_invalid_edit_file_rejects_whole_proposal(store, project, tmp_path, file):
+    git(tmp_path, "init", "-b", "main")
+    (tmp_path / "SOUL.md").write_text("Be helpful\n")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-m", "base")
+    store.observe(project, "a", "feedback", "Improve source")
+    model = ScriptedModel(
+        [
+            call("read_source", {"path": "SOUL.md"}),
+            call(
+                "propose_evolution",
+                {
+                    "target": "code",
+                    "rationale": "Invalid sequence",
+                    "files": [{"path": "new.txt", "content": "would be valid"}, file],
+                },
+            ),
+            {"role": "assistant", "content": "Not submitted"},
+        ]
+    )
+    assert Agent(model, store, [], project=project, repo=tmp_path).reflect() == []
+    assert "error" in json.loads(model.received[-1][-1]["content"])
+    assert store.list(project) == [] and not (tmp_path / "new.txt").exists()
+    assert (tmp_path / "SOUL.md").read_text() == "Be helpful\n"

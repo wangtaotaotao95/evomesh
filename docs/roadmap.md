@@ -69,6 +69,7 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Source findings, bounded proposals, SQL lease/cooldown, optional gated integration
 - [x] Real Chromium fixture test and multi-instance review regression tests
 - [x] Paginated reflection source reads and independent bounded evolution step budget
+- [x] Exact source-edit proposals compiled against pinned Git blobs, preserving untouched content
 - [ ] Cross-turn browser profiles and interactive takeover
 - [ ] Persistent code kernels and programmatic tool composition
 - [ ] Dedicated review worker to avoid idle-worker scheduling delays under sustained load
