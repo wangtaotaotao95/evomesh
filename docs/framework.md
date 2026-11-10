@@ -109,8 +109,11 @@ from threading import Event, Thread
 from evomesh.proactive import ProactiveEvolution
 
 stop = Event()
-reviewer = Thread(target=ProactiveEvolution(app).run, args=(stop,),
-                  kwargs={"poll_interval": 60, "on_cycle": print})
+reviewer = Thread(
+    target=ProactiveEvolution(app).run,
+    args=(stop,),
+    kwargs={"poll_interval": 60, "on_cycle": print},
+)
 reviewer.start()
 try:
     answer = app.run("Help with my task")
