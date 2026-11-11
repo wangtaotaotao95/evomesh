@@ -79,7 +79,9 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 bytes, shortened further as needed to keep the complete JSON response within
 18,000 characters, including escaping. `output_bytes` counts the original
 combined bytes; `truncated=true` means some output was omitted. Narrow the command
-or printed results before retrying. Nonzero exits remain tool errors, while
+or printed results before retrying. For Docker, streams are combined in arrival
+order; relative stdout/stderr write order inside the container is not guaranteed.
+Nonzero exits remain tool errors, while
 truncation alone is not an execution failure. Both produce source-linked evolution
 evidence without copying command arguments or diagnostics into the shared ledger.
 Output is drained through a pipe into a fixed 20,000-byte tail buffer, with
