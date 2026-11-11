@@ -86,12 +86,24 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                 output.seek(0, os.SEEK_END)
                 size = output.tell()
                 output.seek(max(0, size - 20000))
-                content = output.read().decode(errors="replace")
-        return {"exit_code": code, "output": content, "truncated": size > 20000}
+                content = output.read(20000).decode(errors="replace")
+        result = {
+            "exit_code": code,
+            "output": content,
+            "output_bytes": size,
+            "truncated": size > 20000,
+        }
+        # Bound the serialized result, including escaping and metadata. Preserve
+        # the tail (where diagnostics usually finish) and keep the JSON intact.
+        while len(json.dumps(result, ensure_ascii=False)) > 18000:
+            result["output"] = result["output"][len(result["output"]) // 2 :]
+            result["truncated"] = True
+        return result
 
     return Tool(
         "terminal",
-        "Run command argv. No implicit shell. "
+        "Run command argv. No implicit shell. Returns exit_code, output tail, total "
+        "output_bytes and truncated. If truncated, narrow the command output before retrying. "
         + (
             "Read-only workspace in a restricted Docker container."
             if backend == "docker"
@@ -111,6 +123,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
         source_paths=("src/evomesh/capabilities.py",),
         capability="terminal",
         result_is_error=lambda result: json.loads(result)["exit_code"] != 0,
+        result_is_truncated=lambda result: json.loads(result)["truncated"],
     )
 
 
@@ -130,6 +143,8 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
     return Tool(
         "execute_code",
         "Execute a one-shot Python or JavaScript program; print results. "
+        "Returns exit_code, output tail, output_bytes and truncated; narrow printed output "
+        "if truncated. "
         "No persistent kernel or access to agent credentials. Same permissions as terminal. "
         "Docker supports Python only; local JavaScript requires Node.js.",
         object_schema(
@@ -143,6 +158,7 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
         source_paths=("src/evomesh/capabilities.py",),
         capability="execution",
         result_is_error=terminal.result_is_error,
+        result_is_truncated=terminal.result_is_truncated,
     )
 
 

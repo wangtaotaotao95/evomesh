@@ -97,6 +97,7 @@ class Agent:
             "model_calls": 0,
             "tool_calls": 0,
             "tool_errors": 0,
+            "tool_output_truncations": 0,
             "context_compactions": 0,
             "max_input_chars": 0,
             "limits": {
@@ -166,6 +167,7 @@ class Agent:
                     self.metrics["tool_calls"] += 1
                     self.on_event({"kind": "tool_started", "tool": name})
                     outcome = "ok"
+                    output_truncated = False
                     try:
                         if self.before_tool is not None and not self.before_tool(
                             name, json.loads(call["function"]["arguments"])
@@ -173,6 +175,8 @@ class Agent:
                             raise PermissionError("Tool denied by application policy")
                         output = self.tools[name].invoke(call["function"]["arguments"])
                         registered = self.tools[name]
+                        if registered.result_is_truncated:
+                            output_truncated = registered.result_is_truncated(output)
                         if registered.result_is_error and registered.result_is_error(output):
                             outcome = "error"
                             self.metrics["tool_errors"] += 1
@@ -216,11 +220,24 @@ class Agent:
                         )
                     if outcome == "ok" and name == "search_knowledge" and output == "[]":
                         self.observe("retrieval_miss", friction_detail("knowledge"))
-                    if len(output) > 20000:
+                    if output_truncated or len(output) > 20000:
+                        self.metrics["tool_output_truncations"] += 1
+                        registered = self.tools.get(name)
+                        provenance = (
+                            {"source_paths": list(registered.source_paths)}
+                            if registered and registered.source_paths
+                            else {}
+                        )
                         self.observe(
                             "tool_output_limit",
                             friction_detail(
-                                "context", tool=name, facts={"output_chars": len(output)}
+                                registered.capability if provenance else "context",
+                                tool=name,
+                                facts={
+                                    "output_chars": len(output),
+                                    "tool_truncated": output_truncated,
+                                    **provenance,
+                                },
                             ),
                         )
                     self.on_event({"kind": "tool_completed", "tool": name, "outcome": outcome})

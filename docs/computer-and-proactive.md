@@ -74,6 +74,16 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 | `search_files` | Literal substring search, path/line citations, at most 1,000 files and 100 hits |
 | `edit_file` | Read first; replace exactly one literal match; rejects missing/ambiguous matches |
 
+`terminal` and `execute_code` return `exit_code`, `output`, `output_bytes` and
+`truncated`. Output combines stdout/stderr and retains the tail of at most 20,000
+bytes, shortened further as needed to keep the complete JSON response within
+18,000 characters, including escaping. `output_bytes` counts the original
+combined bytes; `truncated=true` means some output was omitted. Narrow the command
+or printed results before retrying. Nonzero exits remain tool errors, while
+truncation alone is not an execution failure. Both produce source-linked evolution
+evidence without copying command arguments or diagnostics into the shared ledger.
+This bounds the returned response, not temporary capture-file disk usage.
+
 For long workspace files, call `read_file_chunk` with `path` and optionally `limit`
 (1–12,000 characters). Follow the returned `next_offset` until null, supplying the
 returned `sha256` as `expected_sha256` on each subsequent call. The digest covers

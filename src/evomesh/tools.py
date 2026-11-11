@@ -21,6 +21,7 @@ class Tool:
     source_paths: tuple[str, ...] = ()
     capability: str = "tools"
     result_is_error: Callable[[str], bool] | None = None
+    result_is_truncated: Callable[[str], bool] | None = None
 
     def __post_init__(self):
         import re
