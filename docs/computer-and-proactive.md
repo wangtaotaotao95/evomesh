@@ -70,8 +70,25 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 | `terminal` | Explicit argv, no implicit shell; exit code and bounded output; timeout kills process group |
 | `execute_code` | One-shot Python (`-I`) or local Node.js; print results; same backend/timeout as terminal |
 | `browser` | `open`, `snapshot`, `click`, `fill`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
+| `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search, path/line citations, at most 1,000 files and 100 hits |
 | `edit_file` | Read first; replace exactly one literal match; rejects missing/ambiguous matches |
+
+For long workspace files, call `read_file_chunk` with `path` and optionally `limit`
+(1–12,000 characters). Follow the returned `next_offset` until null, supplying the
+returned `sha256` as `expected_sha256` on each subsequent call. The digest covers
+the original file bytes. If they change, `FileVersionChanged` requires restarting
+at offset zero without the old digest; this detects version changes between calls
+when the digest is supplied, but does not lock the file or retain a snapshot.
+Pages preserve Unicode and original newlines, and include metadata and JSON
+escaping within an 18,000-character output budget. UTF-8 files remain limited to
+100 KB; binary content, workspace escapes and private metadata paths are rejected.
+The existing `read_file` still returns plain text for small files.
+
+Both the personal assistant and embedded `AgentApp` register this tool by default;
+framework users can also obtain it through `workspace_tools(root)`. Tool failures
+carry `src/evomesh/tools.py` provenance into the SQL evolution ledger, without
+storing file contents or arguments in the failure observation.
 
 Local terminal/code execution has host-user permissions. Environment scrubbing is
 not a sandbox: local code can access host files and the network. Docker is nonroot,

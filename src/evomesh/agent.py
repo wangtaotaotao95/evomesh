@@ -13,7 +13,7 @@ from .evolution import git, make_change, make_edit_change, revision, source_file
 from .learning import capability_catalog, friction_detail
 from .models import Model
 from .store import Store
-from .tools import Tool, object_schema
+from .tools import Tool, object_schema, text_page
 
 DEFAULT_SOUL = """You are EvoMesh, a practical personal assistant.
 Complete the user's task using the available tools. Be honest about uncertainty.
@@ -270,22 +270,7 @@ class Agent:
                 raise ValueError("Source file exceeds 100 KB")
             if content is None:
                 return {"path": path, "content": None, "next_offset": None}
-            source = content.decode()
-            if offset > len(source):
-                raise ValueError("Offset exceeds source length")
-            end = min(offset + limit, len(source))
-            result = {"path": path, "offset": offset, "total_chars": len(source)}
-            while True:
-                result.update(
-                    content=source[offset:end], next_offset=end if end < len(source) else None
-                )
-                # Include JSON escaping/metadata, not just the raw source size.
-                # The agent's outer tool limit is 20,000 characters.
-                if len(json.dumps(result, ensure_ascii=False)) <= 18000:
-                    break
-                if end - offset <= 1:
-                    raise ValueError("Source response metadata exceeds output budget")
-                end = offset + (end - offset) // 2
+            result = text_page(content.decode(), offset, limit, path=path)
             inspected.add(path)
             return result
 

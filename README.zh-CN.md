@@ -63,7 +63,7 @@ CLI 自动读取当前目录的 `evomesh.toml`，也支持 `--config`。其中�
 | 终端 | 显式开启 local / docker | 可替换终端工具 |
 | 浏览器 | open / snapshot / click / fill / back / screenshot | 每次任务独立的 `BrowserSession` |
 | 代码执行 | `execute_code`：Python、local 模式下的 Node.js | 与 Terminal 共用 local / docker 后端 |
-| 文件操作 | `search_files` / `edit_file` | 文件行号证据、唯一匹配编辑 |
+| 文件操作 | `read_file_chunk` / `search_files` / `edit_file` | 分块读取与版本校验、文件行号证据、唯一匹配编辑 |
 | 主动进化 | 空闲检查或独立 `evolution-worker` 周期性检查源码 | `app.evolve_once()` / `ProactiveEvolution.run()`、SQL 租约、可选自动验证合并 |
 | 网页读取 | 配置允许访问的 HTTPS 域名 | 文本提取工具；不等于交互浏览器 |
 | 多 Agent 委派 | 给协调 Agent 注册委派工具 | `Team.run()` / `Team.as_tool()` |

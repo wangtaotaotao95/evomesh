@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -57,6 +58,27 @@ def object_schema(properties: dict, required: list[str] | None = None) -> dict:
     }
 
 
+class FileVersionChanged(ValueError):
+    """The caller's file snapshot is stale; restart chunk reading from offset zero."""
+
+
+def text_page(content: str, offset: int = 0, limit: int = 12000, **metadata) -> dict:
+    """Build a character page that fits the agent's tool limit including JSON escaping."""
+    if type(offset) is not int or not 0 <= offset <= len(content):
+        raise ValueError("Offset must be within the text")
+    if type(limit) is not int or not 1 <= limit <= 12000:
+        raise ValueError("Limit must be an integer in 1–12,000")
+    end = min(offset + limit, len(content))
+    result = {**metadata, "offset": offset, "total_chars": len(content)}
+    while True:
+        result.update(content=content[offset:end], next_offset=end if end < len(content) else None)
+        if len(json.dumps(result, ensure_ascii=False)) <= 18000:
+            return result
+        if end - offset <= 1:
+            raise ValueError("Text response metadata exceeds output budget")
+        end = offset + (end - offset) // 2
+
+
 def workspace_tools(root: Path) -> list[Tool]:
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -77,6 +99,25 @@ def workspace_tools(root: Path) -> list[Tool]:
         if file.stat().st_size > 100_000:
             raise ValueError("File exceeds 100 KB")
         return file.read_text(encoding="utf-8")
+
+    def read_file_chunk(
+        path: str, offset: int = 0, limit: int = 12000, expected_sha256: str | None = None
+    ) -> dict:
+        file = resolve(path)
+        if not file.is_file():
+            raise ValueError("Expected a regular workspace file")
+        with file.open("rb") as stream:
+            raw = stream.read(100_001)
+        if len(raw) > 100_000:
+            raise ValueError("File exceeds 100 KB")
+        if b"\0" in raw:
+            raise ValueError("Expected UTF-8 text, not binary content")
+        digest = hashlib.sha256(raw).hexdigest()
+        if expected_sha256 is not None and expected_sha256 != digest:
+            raise FileVersionChanged(
+                "File changed; restart from offset zero without the old digest"
+            )
+        return text_page(raw.decode("utf-8"), offset, limit, path=path, sha256=digest)
 
     def write_file(path: str, content: str) -> str:
         if len(content.encode()) > 100_000:
@@ -130,7 +171,31 @@ def workspace_tools(root: Path) -> list[Tool]:
 
     path_schema = object_schema({"path": {"type": "string"}})
     return [
-        Tool("read_file", "Read a UTF-8 file in your workspace.", path_schema, read_file),
+        Tool(
+            "read_file",
+            "Read a small UTF-8 file in your workspace. For longer files, use "
+            "read_file_chunk to avoid output truncation.",
+            path_schema,
+            read_file,
+        ),
+        Tool(
+            "read_file_chunk",
+            "Read a bounded UTF-8 file page. Offsets count characters, not bytes. Follow "
+            "next_offset until null, passing the returned sha256 as expected_sha256 on later "
+            "pages. On FileVersionChanged, restart at offset zero without the stale digest. "
+            "Supports files up to 100 KB; preserves original newlines.",
+            object_schema(
+                {
+                    "path": {"type": "string"},
+                    "offset": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 12000},
+                    "expected_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                },
+                ["path"],
+            ),
+            read_file_chunk,
+            source_paths=("src/evomesh/tools.py",),
+        ),
         Tool(
             "write_file",
             "Write a UTF-8 file in your workspace.",

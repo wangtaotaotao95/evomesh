@@ -65,6 +65,7 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Per-task Chromium: open, snapshot, click, fill, back, screenshot
 - [x] Python/local JavaScript execute_code with terminal isolation and timeout
 - [x] Literal file search with line evidence and exact-match editing
+- [x] Bounded workspace file pages with SHA-256 consistency checks and evolution provenance
 - [x] Idle, project-wide proactive source review without requiring runtime errors
 - [x] Source findings, bounded proposals, SQL lease/cooldown, optional gated integration
 - [x] Real Chromium fixture test and multi-instance review regression tests
