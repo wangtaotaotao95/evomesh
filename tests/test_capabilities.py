@@ -169,3 +169,17 @@ def test_docker_terminal_has_readonly_workspace_and_nonroot_user(tmp_path):
     )
     assert result["exit_code"] != 0
     assert not (tmp_path / "new.txt").exists()
+    result = json.loads(
+        execute_code_tool(tmp_path, backend="docker").invoke(
+            json.dumps(
+                {
+                    "code": "import os\nfor _ in range(100): os.write(1, b'x' * 65536)\n"
+                    "os.write(2, b'FINAL_STDERR\\n')"
+                }
+            )
+        )
+    )
+    assert result["exit_code"] == 0
+    assert result["output"].endswith("FINAL_STDERR\n")
+    assert result["output_bytes"] == 100 * 65536 + len(b"FINAL_STDERR\n")
+    assert result["truncated"] is True

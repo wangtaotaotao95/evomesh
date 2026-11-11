@@ -82,7 +82,16 @@ combined bytes; `truncated=true` means some output was omitted. Narrow the comma
 or printed results before retrying. Nonzero exits remain tool errors, while
 truncation alone is not an execution failure. Both produce source-linked evolution
 evidence without copying command arguments or diagnostics into the shared ledger.
-This bounds the returned response, not temporary capture-file disk usage.
+Output is drained through a pipe into a fixed 20,000-byte tail buffer, with
+bounded read chunks and no output spool file. Large stdout/stderr streams therefore
+do not accumulate in framework memory or on disk. This does not limit files the
+command itself writes. Commands are one-shot: their process group is cleaned up
+on completion, timeout or capture failure. A child holding an output pipe after
+its parent exits is still subject to the original timeout. Detached processes
+that deliberately leave the group are outside this cleanup contract; local
+execution remains trusted host execution, not process isolation. Docker cleanup
+also removes the named container. These guarantees use POSIX process groups and
+pipe selectors (Linux/macOS), not a Windows terminal backend.
 
 For long workspace files, call `read_file_chunk` with `path` and optionally `limit`
 (1–12,000 characters). Follow the returned `next_offset` until null, supplying the

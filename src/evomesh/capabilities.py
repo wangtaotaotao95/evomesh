@@ -5,11 +5,13 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import selectors
 import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from html.parser import HTMLParser
 from pathlib import Path
@@ -18,6 +20,38 @@ from urllib.parse import urlparse
 import httpx
 
 from .tools import Tool, object_schema
+
+
+def _capture_output(process: subprocess.Popen, timeout: float) -> tuple[int, bytes, int]:
+    """Drain a one-shot process without a disk spool or an unbounded output buffer."""
+    deadline = time.monotonic() + timeout
+    tail, size = b"", 0
+    try:
+        with process.stdout, selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(process.args, timeout)
+                for key, _ in selector.select(remaining):
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        selector.unregister(key.fd)
+                    else:
+                        size += len(chunk)
+                        tail = (tail + chunk)[-20000:]
+            code = process.wait(timeout=max(0, deadline - time.monotonic()))
+        return code, tail, size
+    except subprocess.TimeoutExpired:
+        raise TimeoutError("Terminal command timed out") from None
+    finally:
+        # A child may still hold the pipe after the command leader exits. Clean
+        # up this invocation's group even then; these are one-shot commands.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
 
 
 def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) -> Tool:
@@ -60,33 +94,26 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                 for key in ("HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"):
                     if key in os.environ:
                         env[key] = os.environ[key]
-            with tempfile.TemporaryFile() as output:
-                process = subprocess.Popen(
-                    argv,
-                    cwd=root,
-                    env=env,
-                    stdout=output,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-                try:
-                    code = process.wait(timeout=timeout)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-                    raise TimeoutError("Terminal command timed out") from None
-                finally:
-                    if backend == "docker":
-                        subprocess.run(
-                            ["docker", "rm", "-f", container],
-                            capture_output=True,
-                            timeout=15,
-                            check=False,
-                        )
-                output.seek(0, os.SEEK_END)
-                size = output.tell()
-                output.seek(max(0, size - 20000))
-                content = output.read(20000).decode(errors="replace")
+            process = subprocess.Popen(
+                argv,
+                cwd=root,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            try:
+                code, tail, size = _capture_output(process, timeout)
+                content = tail.decode(errors="replace")
+            finally:
+                if backend == "docker":
+                    subprocess.run(
+                        ["docker", "rm", "-f", container],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                        check=False,
+                    )
         result = {
             "exit_code": code,
             "output": content,
@@ -102,7 +129,8 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
 
     return Tool(
         "terminal",
-        "Run command argv. No implicit shell. Returns exit_code, output tail, total "
+        "Run one-shot command argv; its process group is cleaned up on return. "
+        "No implicit shell. Returns exit_code, output tail, total "
         "output_bytes and truncated. If truncated, narrow the command output before retrying. "
         + (
             "Read-only workspace in a restricted Docker container."
