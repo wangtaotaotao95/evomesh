@@ -93,7 +93,7 @@ def test_execution_truncation_reaches_model_metrics_and_private_evidence(
     detail = json.loads(limits[0]["detail"])
     assert detail["tool_truncated"] is True
     assert detail["capability"] == ("terminal" if kind == "terminal" else "execution")
-    assert detail["source_paths"] == ["src/evomesh/capabilities.py"]
+    assert detail["source_paths"] == ["src/evomesh/capabilities.py", "src/evomesh/processes.py"]
     assert detail["output_chars"] <= 18000
     assert all("PRIVATE_DIAGNOSTIC" not in row["detail"] for row in observations)
 

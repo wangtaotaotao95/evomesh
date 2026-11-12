@@ -6,12 +6,12 @@ import hashlib
 import json
 import os
 import re
-import signal
 import subprocess
 import tempfile
 import threading
 from pathlib import Path, PurePosixPath
 
+from .processes import capture_output
 from .store import LeaseLost, Store
 
 
@@ -223,7 +223,7 @@ class Integrator:
                 return parts[index].strip()
         return None
 
-    def _validate(self, work: Path) -> str:
+    def _validate(self, work: Path, guard=None) -> str:
         reports = []
         # Candidate code must not inherit API/DB credentials. This is environment
         # hygiene, not an OS sandbox; use a disposable runner for untrusted code.
@@ -240,24 +240,25 @@ class Integrator:
                 PYTHONDONTWRITEBYTECODE="1",
             )
             for command in self.checks:
-                with tempfile.TemporaryFile() as output:
-                    process = subprocess.Popen(
-                        command,
-                        cwd=work,
-                        env=env,
-                        stdout=output,
-                        stderr=subprocess.STDOUT,
-                        start_new_session=True,
+                if guard:
+                    guard()
+                process = subprocess.Popen(
+                    command,
+                    cwd=work,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                try:
+                    code, tail, size = capture_output(
+                        process, self.timeout, tail_bytes=8000, guard=guard
                     )
-                    try:
-                        code = process.wait(timeout=self.timeout)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
-                        raise ValueError(f"Validation timed out: {command[0]}") from None
-                    output.seek(0, os.SEEK_END)
-                    output.seek(max(0, output.tell() - 8000))
-                    report = output.read().decode(errors="replace")
+                except TimeoutError:
+                    raise ValueError(f"Validation timed out: {command[0]}") from None
+                report = tail.decode(errors="replace")
+                if size > len(tail):
+                    report = f"[Output truncated: {size} bytes; showing tail]\n" + report
                 reports.append(f"{command!r}\n{report}")
                 if code:
                     raise ValueError("Validation failed\n" + "\n".join(reports))
@@ -281,6 +282,11 @@ class Integrator:
 
         thread = threading.Thread(target=heartbeat, daemon=True)
         thread.start()
+
+        def guard():
+            if lost.is_set():
+                raise LeaseLost(identifier)
+
         status, report, commit = "error", "", None
         try:
             previous = self._previous(head, identifier)
@@ -320,7 +326,7 @@ class Integrator:
                         paths = [c["path"] for c in changes]
                         git(work, "add", "--", *paths)
                         tree = git(work, "write-tree")
-                        report = self._validate(work)
+                        report = self._validate(work, guard=guard)
                         git(work, "add", "-u")
                         if git(work, "write-tree") != tree:
                             raise ValueError("Validation modified tracked candidate files")

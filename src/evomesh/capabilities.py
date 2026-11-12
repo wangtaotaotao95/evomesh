@@ -5,13 +5,10 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
-import selectors
-import signal
 import socket
 import subprocess
 import sys
 import tempfile
-import time
 import uuid
 from html.parser import HTMLParser
 from pathlib import Path
@@ -19,39 +16,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .processes import capture_output
 from .tools import Tool, object_schema
-
-
-def _capture_output(process: subprocess.Popen, timeout: float) -> tuple[int, bytes, int]:
-    """Drain a one-shot process without a disk spool or an unbounded output buffer."""
-    deadline = time.monotonic() + timeout
-    tail, size = b"", 0
-    try:
-        with process.stdout, selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ)
-            while selector.get_map():
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise subprocess.TimeoutExpired(process.args, timeout)
-                for key, _ in selector.select(remaining):
-                    chunk = os.read(key.fd, 65536)
-                    if not chunk:
-                        selector.unregister(key.fd)
-                    else:
-                        size += len(chunk)
-                        tail = (tail + chunk)[-20000:]
-            code = process.wait(timeout=max(0, deadline - time.monotonic()))
-        return code, tail, size
-    except subprocess.TimeoutExpired:
-        raise TimeoutError("Terminal command timed out") from None
-    finally:
-        # A child may still hold the pipe after the command leader exits. Clean
-        # up this invocation's group even then; these are one-shot commands.
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
 
 
 def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) -> Tool:
@@ -103,7 +69,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                 start_new_session=True,
             )
             try:
-                code, tail, size = _capture_output(process, timeout)
+                code, tail, size = capture_output(process, timeout)
                 content = tail.decode(errors="replace")
             finally:
                 if backend == "docker":
@@ -148,7 +114,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
             }
         ),
         run,
-        source_paths=("src/evomesh/capabilities.py",),
+        source_paths=("src/evomesh/capabilities.py", "src/evomesh/processes.py"),
         capability="terminal",
         result_is_error=lambda result: json.loads(result)["exit_code"] != 0,
         result_is_truncated=lambda result: json.loads(result)["truncated"],
@@ -183,7 +149,7 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
             ["code"],
         ),
         execute,
-        source_paths=("src/evomesh/capabilities.py",),
+        source_paths=("src/evomesh/capabilities.py", "src/evomesh/processes.py"),
         capability="execution",
         result_is_error=terminal.result_is_error,
         result_is_truncated=terminal.result_is_truncated,

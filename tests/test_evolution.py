@@ -249,6 +249,110 @@ def test_candidate_code_is_imported_and_credentials_removed(store, repo, project
     assert result["status"] == "integrated"
 
 
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_validation_large_output_is_bounded_and_preserves_gate_result(
+    store, repo, project, monkeypatch, exit_code
+):
+    import tracemalloc
+
+    def no_spool(*args, **kwargs):
+        pytest.fail("Validation output must not be spooled to disk")
+
+    monkeypatch.setattr("evomesh.evolution.tempfile.TemporaryFile", no_spool)
+    proposal(store, repo, project)
+    before = revision(repo)
+    code = (
+        "import os\nfor _ in range(100): os.write(1, b'x' * 65536)\n"
+        f"os.write(2, b'GATE_TAIL\\n'); raise SystemExit({exit_code})"
+    )
+    tracemalloc.start()
+    try:
+        result = worker(store, repo, project, code).once()
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 3_000_000  # Less than half the 6.5 MB emitted by the candidate.
+    assert result["status"] == ("integrated" if exit_code == 0 else "rejected")
+    assert "Output truncated: 6553610 bytes" in result["report"]
+    assert result["report"].endswith("GATE_TAIL\n")
+    assert len(result["report"]) < 9000
+    assert store.list(project)[0]["report"] == result["report"]
+    if exit_code:
+        assert revision(repo, "evolution/main") == before
+    assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+@pytest.mark.parametrize("output_mode", ["quiet", "noisy", "closed"])
+def test_lost_lease_interrupts_validation_without_stale_finish_or_publication(
+    store, repo, project, monkeypatch, tmp_path, output_mode
+):
+    import subprocess
+
+    from evomesh.store import LeaseLost
+
+    identifier = proposal(store, repo, project)
+    before = revision(repo)
+    ready, later = tmp_path / "ready", tmp_path / "later"
+    body = {
+        "quiet": "time.sleep(30)",
+        "noisy": "while True: os.write(1, b'x' * 65536)",
+        "closed": "os.close(1); os.close(2); time.sleep(30)",
+    }[output_mode]
+    code = (
+        "import os, time; from pathlib import Path\n"
+        f"Path({str(ready)!r}).write_text(str(os.getpid()))\n" + body
+    )
+    integrator = worker(store, repo, project, code, lease_seconds=3, timeout=8)
+    integrator.checks.append(
+        [
+            sys.executable,
+            "-c",
+            f"from pathlib import Path; Path({str(later)!r}).touch()",
+        ]
+    )
+    real_popen, children = subprocess.Popen, []
+
+    def tracked_popen(command, **kwargs):
+        process = real_popen(command, **kwargs)
+        if command[0] == sys.executable:
+            children.append(process)
+        return process
+
+    def lose_lease(*args):
+        # A new owner has taken the claim; the old worker must not finish it.
+        with store.engine.begin() as conn:
+            conn.execute(
+                update(proposals)
+                .where(proposals.c.id == identifier)
+                .values(
+                    token="replacement-worker",
+                    lease_until=time.time() + 60,
+                )
+            )
+        raise LeaseLost(identifier)
+
+    with monkeypatch.context() as patch:
+        patch.setattr("evomesh.processes.subprocess.Popen", tracked_popen)
+        patch.setattr(store, "renew", lose_lease)
+        started = time.monotonic()
+        with pytest.raises(LeaseLost):
+            integrator.once()
+        assert time.monotonic() - started < 6  # Interrupt before the 8-second command timeout.
+    assert ready.exists() and not later.exists()
+    assert len(children) == 1 and children[0].returncode is not None
+    assert children[0].stdout.closed
+    assert revision(repo, "evolution/main") == before
+    assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
+    row = store.list(project)[0]
+    assert row["status"] == "validating" and row["token"] == "replacement-worker"
+    assert row["report"] is None and row["result_commit"] is None
+    # Ordinary lease expiry/reclaim remains the recovery route; no blind finish.
+    with store.engine.begin() as conn:
+        conn.execute(update(proposals).where(proposals.c.id == identifier).values(lease_until=0))
+    assert worker(store, repo, project).once()["status"] == "integrated"
+    assert store.list(project)[0]["attempts"] == 2
+
+
 def test_validator_sees_candidate_loop_source(store, repo, project):
     proposal(store, repo, project, "src/loop.py", "raise RuntimeError('broken loop')\n")
     assert worker(store, repo, project, "import loop").once()["status"] == "rejected"

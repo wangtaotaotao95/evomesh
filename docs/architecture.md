@@ -48,6 +48,26 @@ Use `make_change(repo, base, path, content)` to derive the hash. A null hash mea
 9. CAS the integration ref from the validated head to the candidate commit. If another worker advanced it, return the proposal to pending for fresh validation.
 10. Finish the SQL record with the commit and report. On a Git/SQL crash gap, recovery finds the commit trailer.
 
+Validation drains combined stdout/stderr through the same bounded POSIX pipe
+capture used by terminal tools, retaining an 8,000-byte tail per check instead of
+spooling full output to disk. Truncated reports include the captured byte count;
+the SQL ledger retains its existing final 16,000-character report limit. Successful
+checks and nonzero exits still pass through the same publication gates.
+
+Once the renewal thread detects lease loss or a renewal error, the active check
+is interrupted and its process group is cleaned up. The capture loop checks that
+signal between reads and waits of at most 100 ms, even if the child is quiet or
+has closed stdout early. Renewal detection itself follows the existing heartbeat
+interval and database response time; this is not a new SQL query every 100 ms.
+The signal is also checked before launching each command. Candidate worktrees are removed, and
+`LeaseLost` propagates without finishing another owner's claim or publishing a
+commit. Normal lease expiry/reclaim remains the recovery path.
+
+Process cleanup also runs on success, timeout and capture errors. It covers the
+invocation's process group, not deliberately detached processes or files written
+by the candidate. Validation still requires a trusted or independently isolated
+runner; bounded capture does not make arbitrary candidate code a sandbox.
+
 There is no distributed transaction across Git and SQL. This protocol provides exclusive live claims, atomic branch publication, and idempotent recovery in a trusted canonical repository. It does not claim global exactly-once execution; validation can run again after a crash. Avoid validators with external side effects.
 
 Terminal states are `integrated`, `conflict`, `rejected`, and `error`. A `pending` retry is used for ref races. Conflict/rejected/error records stay available for inspection; generate a revised proposal to retry them. Errors cannot be silently treated as accepted changes.
