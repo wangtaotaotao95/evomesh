@@ -71,7 +71,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 | `execute_code` | One-shot Python (`-I`) or local Node.js; print results; same backend/timeout as terminal |
 | `browser` | `open`, `snapshot`, `click`, `fill`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
-| `search_files` | Literal substring search, path/line citations, at most 1,000 files and 100 hits |
+| `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
 | `edit_file` | Read first; replace exactly one literal match; rejects missing/ambiguous matches |
 
 `terminal` and `execute_code` return `exit_code`, `output`, `output_bytes` and
@@ -105,6 +105,30 @@ Pages preserve Unicode and original newlines, and include metadata and JSON
 escaping within an 18,000-character output budget. UTF-8 files remain limited to
 100 KB; binary content, workspace escapes and private metadata paths are rejected.
 The existing `read_file` still returns plain text for small files.
+
+`search_files` accepts a file or directory `path`, an optional `offset` (number of
+matching lines to skip) and `limit` (1–100 results, default 100). Results retain
+the existing `matches` and `truncated` fields, adding `next_offset`,
+`scan_limit_reached`, `scanned_files` and `skipped_files`. The complete JSON page
+fits within 18,000 characters, including escaping. Follow `next_offset` with the
+same query/path; fewer than `limit` results may be returned to fit the budget.
+Each citation keeps its workspace-relative path, line number and first 500
+characters of line text; use file reading for the rest of a long matching line.
+
+Each call rescans in deterministic directory/file order, examining at most 1,000
+candidate files. Hidden entries and directory symlinks are excluded from recursive
+discovery; explicit paths still use the workspace/private-metadata checks. Reads
+are bounded to 100 KB and skip binary, invalid UTF-8, oversized or unreadable files,
+counting them in `skipped_files`. Missing or unsupported search roots raise an error.
+If `scan_limit_reached=true`, `next_offset` is null and `truncated=true`: narrow
+the path rather than interpreting empty results as a complete negative search.
+The scan ceiling produces source-linked truncation evidence; ordinary pagination
+does not count as lost output. The personal assistant and `workspace_tools(root)`
+framework API share this behavior.
+
+Pages are live searches, not a filesystem snapshot. Concurrent file edits may
+shift matching-line offsets; restart or narrow the search when consistency matters.
+The usual task step/context budgets still apply to repeated tool calls.
 
 Both the personal assistant and embedded `AgentApp` register this tool by default;
 framework users can also obtain it through `workspace_tools(root)`. Tool failures

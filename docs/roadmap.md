@@ -67,6 +67,7 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] JSON-safe execution output tails and source-linked truncation evidence/metrics
 - [x] Bounded pipe capture without output spool files; deadline and descendant cleanup
 - [x] Literal file search with line evidence and exact-match editing
+- [x] Bounded search pagination, single-file scopes and explicit scan-limit evidence
 - [x] Bounded workspace file pages with SHA-256 consistency checks and evolution provenance
 - [x] Idle, project-wide proactive source review without requiring runtime errors
 - [x] Source findings, bounded proposals, SQL lease/cooldown, optional gated integration

@@ -141,34 +141,79 @@ def workspace_tools(root: Path) -> list[Tool]:
             raise ValueError("Expected exactly one match; read the file before editing")
         return write_file(path, content.replace(old, new, 1))
 
-    def search_files(query: str, path: str = ".") -> dict:
+    def search_files(query: str, path: str = ".", offset: int = 0, limit: int = 100) -> dict:
         import os
 
         if not query:
             raise ValueError("Search query must not be empty")
+        if type(offset) is not int or not 0 <= offset <= 100_000_000:
+            raise ValueError("Offset must be an integer in 0–100,000,000")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("Limit must be an integer in 1–100")
         base = resolve(path)
-        matches, scanned = [], 0
-        for directory, dirs, files in os.walk(base, followlinks=False):
-            dirs[:] = sorted(
-                d for d in dirs if not d.startswith(".") and not (Path(directory) / d).is_symlink()
-            )
-            for name in sorted(files):
-                if name.startswith("."):
+        if not base.is_file() and not base.is_dir():
+            raise ValueError("Expected a workspace file or directory")
+
+        def candidates():
+            if base.is_file():
+                yield base
+                return
+            for directory, dirs, files in os.walk(base, followlinks=False):
+                dirs[:] = sorted(
+                    d
+                    for d in dirs
+                    if not d.startswith(".") and not (Path(directory) / d).is_symlink()
+                )
+                for name in sorted(files):
+                    if not name.startswith("."):
+                        yield Path(directory) / name
+
+        matches, scanned, skipped, seen, output_size = [], 0, 0, 0, 2
+
+        def result(next_offset=None, scan_limit_reached=False):
+            return {
+                "matches": matches,
+                "next_offset": next_offset,
+                "truncated": next_offset is not None or scan_limit_reached,
+                "scan_limit_reached": scan_limit_reached,
+                "scanned_files": scanned,
+                "skipped_files": skipped,
+            }
+
+        for candidate in candidates():
+            if scanned >= 1000:
+                return result(scan_limit_reached=True)
+            scanned += 1
+            relative = str(candidate.relative_to(root))
+            try:
+                file = resolve(relative)
+                if not file.is_file():
+                    raise ValueError("Expected a regular file")
+                with file.open("rb") as stream:
+                    raw = stream.read(100_001)
+                if len(raw) > 100_000 or b"\0" in raw:
+                    raise ValueError("Expected UTF-8 text up to 100 KB")
+                content = raw.decode("utf-8")
+            except (ValueError, OSError):
+                skipped += 1
+                continue
+            for number, line in enumerate(content.splitlines(), 1):
+                if query not in line:
                     continue
-                scanned += 1
-                if scanned > 1000:
-                    return {"matches": matches, "truncated": True}
-                relative = str((Path(directory) / name).relative_to(root))
-                try:
-                    content = read_file(relative)
-                except (ValueError, OSError, UnicodeError):
+                if seen < offset:
+                    seen += 1
                     continue
-                for number, line in enumerate(content.splitlines(), 1):
-                    if query in line:
-                        matches.append({"path": relative, "line": number, "text": line[:500]})
-                        if len(matches) >= 100:
-                            return {"matches": matches, "truncated": True}
-        return {"matches": matches, "truncated": False}
+                match = {"path": relative, "line": number, "text": line[:500]}
+                # Leave room for metadata; count escaping, separators and brackets.
+                size = len(json.dumps(match, ensure_ascii=False)) + (2 if matches else 0)
+                if len(matches) >= limit or output_size + size > 17000:
+                    if not matches:
+                        raise ValueError("Search match metadata exceeds output budget")
+                    return result(next_offset=offset + len(matches))
+                matches.append(match)
+                output_size += size
+                seen += 1
+        return result()
 
     path_schema = object_schema({"path": {"type": "string"}})
     return [
@@ -223,12 +268,24 @@ def workspace_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             "search_files",
-            "Search workspace text by literal substring, returning file/line evidence.",
+            "Search a workspace file or directory by literal substring. Returns file/line "
+            "evidence in bounded pages; follow next_offset with the same query/path. Offsets "
+            "count matching lines. Each call rescans up to 1,000 files; if scan_limit_reached, "
+            "narrow path instead of claiming no matches. Files may change between pages. "
+            "skipped_files counts unreadable, binary or oversized files; text previews use "
+            "the first 500 characters of each matching line.",
             object_schema(
-                {"query": {"type": "string", "minLength": 1}, "path": {"type": "string"}}, ["query"]
+                {
+                    "query": {"type": "string", "minLength": 1},
+                    "path": {"type": "string"},
+                    "offset": {"type": "integer", "minimum": 0, "maximum": 100_000_000},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                ["query"],
             ),
             search_files,
             source_paths=("src/evomesh/tools.py",),
+            result_is_truncated=lambda output: json.loads(output)["scan_limit_reached"],
         ),
     ]
 
