@@ -77,3 +77,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [ ] Persistent code kernels and programmatic tool composition
 - [x] Dedicated review worker to avoid idle-worker scheduling delays under sustained load
 - [x] Preserve saved proposal receipts when reflection or integration subsequently fails
+- [x] Bounded review summaries, frozen evidence pages and previous validation feedback
