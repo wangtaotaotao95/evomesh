@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import os
@@ -17,7 +18,7 @@ from urllib.parse import urlparse
 import httpx
 
 from .processes import capture_output
-from .tools import Tool, object_schema
+from .tools import Tool, ToolFeedbackError, object_schema, text_page
 
 
 def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) -> Tool:
@@ -175,10 +176,16 @@ class PageText(HTMLParser):
             self.parts.append(data.strip())
 
 
+class WebPageChanged(ToolFeedbackError):
+    """A web read no longer matches the caller's extracted-text snapshot."""
+
+
 def web_tool(allowed_hosts: list[str]) -> Tool:
     allowed = {host.lower() for host in allowed_hosts}
 
-    def read(url: str) -> dict:
+    def read(
+        url: str, offset: int = 0, limit: int = 12000, expected_sha256: str | None = None
+    ) -> dict:
         parsed = urlparse(url)
         if (
             parsed.scheme != "https"
@@ -198,9 +205,10 @@ def web_tool(allowed_hosts: list[str]) -> Tool:
         with httpx.Client(trust_env=False, follow_redirects=False, timeout=20) as client:
             with client.stream("GET", url) as response:
                 response.raise_for_status()
-                if not response.headers.get("content-type", "").startswith(
-                    ("text/", "application/json")
-                ):
+                media_type = (
+                    response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                )
+                if not (media_type.startswith("text/") or media_type == "application/json"):
                     raise ValueError("Only text pages are supported")
                 chunks, size = [], 0
                 for chunk in response.iter_bytes():
@@ -209,14 +217,38 @@ def web_tool(allowed_hosts: list[str]) -> Tool:
                         raise ValueError("Page exceeds 1 MB")
                     chunks.append(chunk)
                 content = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
-        parser = PageText()
-        parser.feed(content)
-        return {"url": url, "text": "\n".join(parser.parts)[:20000]}
+        if media_type == "text/html":
+            parser = PageText()
+            parser.feed(content)
+            content = "\n".join(parser.parts)
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if expected_sha256 is not None and expected_sha256 != digest:
+            raise WebPageChanged(
+                "Page text changed. Restart at offset zero without expected_sha256; "
+                "do not combine pages from different snapshots."
+            )
+        page = text_page(content, offset, limit, url=url, sha256=digest)
+        # Preserve the existing text field while sharing the JSON-safe page budget.
+        page["text"] = page.pop("content")
+        return page
 
     return Tool(
         "read_web",
-        "Read text from a configured public HTTPS host; no JS or login browser.",
-        object_schema({"url": {"type": "string"}}),
+        "Read a text page from a configured public HTTPS host; no JS or login browser. "
+        "Returns text, sha256, total_chars and next_offset. Follow next_offset with the "
+        "same URL and expected_sha256 to read more; offsets count extracted characters. "
+        "Each call refetches the page (1 MB maximum). Restart from zero if its text changes. "
+        "HTML is extracted; plain text and JSON are preserved.",
+        object_schema(
+            {
+                "url": {"type": "string", "minLength": 1, "maxLength": 8192},
+                "offset": {"type": "integer", "minimum": 0, "maximum": 1_000_000},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12000},
+                "expected_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            },
+            ["url"],
+        ),
         read,
-        source_paths=("src/evomesh/capabilities.py",),
+        source_paths=("src/evomesh/capabilities.py", "src/evomesh/tools.py"),
+        capability="web",
     )

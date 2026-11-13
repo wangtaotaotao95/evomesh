@@ -25,6 +25,7 @@ Index("ix_run_owner", runs.c.project, runs.c.owner, runs.c.created_at)
 
 # Discovery hints, not an allowlist. Any tracked UTF-8 source can still evolve.
 CATALOG = {
+    "web": ("Allowlisted web text pages and snapshot consistency", ["capabilities.py", "tools.py"]),
     "browser": ("Interactive Chromium sessions and page observations", ["browser.py", "app.py"]),
     "terminal": ("Local and restricted Docker commands", ["capabilities.py", "processes.py"]),
     "execution": ("Python/JavaScript code execution", ["capabilities.py", "processes.py"]),

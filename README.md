@@ -84,7 +84,7 @@ Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use 
 | Code execution | `execute_code`: Python / local Node.js | `execute_code_tool`, local/Docker backend |
 | File reading/search/edit | `read_file_chunk`, `search_files`, `edit_file` | Bounded pages with digest checks, exact-match editing and file/line evidence |
 | Proactive evolution | Idle reviews or dedicated `evolution-worker` on a shared interval | `app.evolve_once()`, `ProactiveEvolution.run`, SQL leases, optional integration checks |
-| Public web reading | Explicit HTTPS host allowlist | `web_tool`; text extraction, no JS browser |
+| Public web reading | Explicit HTTPS host allowlist; paginated text with snapshot checks | `web_tool`; JSON-safe pages, HTML extraction, plain text/JSON preservation |
 | MCP tools | Configured trusted stdio servers | Persistent `MCPConnection`, namespaced `Tool` objects |
 | Custom integrations | Trusted plugin modules | `@tool`, `app.register`, replaceable `Model` |
 | Delegation | Can expose named specialist apps as a tool | `Team.run`, `Team.as_tool`, bounded parallel work |

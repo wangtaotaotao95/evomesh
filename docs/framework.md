@@ -196,3 +196,22 @@ Server commands run under the host user. The bridge does not pass EvoMesh API ke
 `terminal="local"` enables bounded argv execution in the workspace with filtered environment variables. It is full host-user execution, not a sandbox. `terminal="docker"` runs in `python:3.12-slim` with no network, nonroot identity, resource limits and a read-only workspace mount. Pre-pull the image; provide a running Docker engine. The container can read mounted files but cannot modify them; the normal file tools remain the writing interface.
 
 `allowed_hosts=["example.com"]` enables `read_web` for exact configured HTTPS hosts. It limits response size, rejects redirects and private-address preflight checks, and extracts text. It is not a search engine or an interactive browser. Use a network egress policy for hostile URLs or DNS; no strong SSRF sandbox is claimed.
+
+`read_web(url, offset=0, limit=12000, expected_sha256=...)` returns `text`,
+`url`, `offset`, `total_chars`, `next_offset` and `sha256`. The original `text`
+field remains, but long pages now require following `next_offset` rather than
+receiving a silently cut prefix. Pass the same URL and returned digest on each
+continuation. Offsets count characters in the extracted text, not response bytes.
+Each call refetches up to 1 MB; there is no persistent page cache. The digest
+covers the complete extracted text. If it changes, `WebPageChanged` supplies a
+model-facing instruction to restart at offset zero without the old digest.
+Omitting `expected_sha256` opts out of snapshot checking.
+
+Only HTML is passed through text extraction; plain text and JSON preserve their
+decoded contents, including whitespace and literal markup. Each serialized page
+fits 18,000 characters (including JSON escaping), so `next_offset` may advance by
+less than `limit`. An empty page returns `text=""` and `next_offset=null`.
+Normal pagination is not a truncation failure. Read failures and stale snapshots
+produce source-linked `web` observations without copying URLs, page text or
+digests into the shared evolution ledger. Private conversation history can still
+contain the requested URL and returned page text.
