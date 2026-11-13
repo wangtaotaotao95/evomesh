@@ -13,7 +13,7 @@ from .evolution import git, make_change, make_edit_change, revision, source_file
 from .learning import capability_catalog, friction_detail
 from .models import Model
 from .store import Store
-from .tools import Tool, object_schema, text_page
+from .tools import Tool, ToolFeedbackError, object_schema, text_page
 
 DEFAULT_SOUL = """You are EvoMesh, a practical personal assistant.
 Complete the user's task using the available tools. Be honest about uncertainty.
@@ -212,12 +212,15 @@ class Agent:
                                 capability, tool=name, error=type(exc).__name__, facts=provenance
                             ),
                         )
-                        output = json.dumps(
-                            {
+                        if isinstance(exc, ToolFeedbackError):
+                            feedback = exc.model_result()
+                            output_truncated = feedback["feedback_truncated"]
+                        else:
+                            feedback = {
                                 "error": type(exc).__name__,
                                 "hint": "Check tool arguments and workspace paths.",
                             }
-                        )
+                        output = json.dumps(feedback, ensure_ascii=False)
                     if outcome == "ok" and name == "search_knowledge" and output == "[]":
                         self.observe("retrieval_miss", friction_detail("knowledge"))
                     if output_truncated or len(output) > 20000:

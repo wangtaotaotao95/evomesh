@@ -122,6 +122,8 @@ project_tools = ["python", "/绝对路径/server.py"]
 
 MCP 当前支持可信 stdio 服务的工具发现与调用，并维护服务会话。终端默认关闭；local 以当前用户权限运行，docker 使用非 root、禁用网络、只读工作区的受限容器。`read_web` 读取域名白名单内的文本；可选 Chromium 浏览器支持 JS 页面操作，任务内保留页面状态，任务结束关闭。它不复用个人浏览器登录，也不支持人工接管。详见[工具与主动进化配置](docs/computer-and-proactive.md)。
 
+MCP 服务端标记的工具失败会把有界反馈交给模型，用于纠正参数；共享自进化记录仅保留错误类型和桥接源码位置。自定义工具可抛出 `ToolFeedbackError` 使用同一机制。反馈可能保存在私有会话中，不应包含不允许模型读取的内容；普通异常和协议错误仍只返回简要类型。详见[框架说明](docs/framework.md#mcp)。
+
 ## 主动全域进化
 
 配置 `proactive_evolution = true` 后，console/task-worker 在空闲时按 `evolution_interval_seconds` 主动检查源码，即使没有错误记录也能发现改进机会。实例通过共享 SQL 租约协调，同一项目同时只运行一轮检查；发现必须引用读过的源码，提案关联检查证据。

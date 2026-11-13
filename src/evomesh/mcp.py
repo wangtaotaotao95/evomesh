@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import threading
 from concurrent.futures import TimeoutError as FutureTimeout
 
-from .tools import Tool
+from .tools import Tool, ToolFeedbackError
+
+
+class MCPToolError(ToolFeedbackError):
+    """A remote tool returned is_error; transport/protocol failures remain exceptions."""
 
 
 class MCPConnection:
@@ -71,6 +76,8 @@ class MCPConnection:
                             remote.description or remote.name,
                             remote.input_schema,
                             handler_for(remote.name),
+                            source_paths=("src/evomesh/mcp.py",),
+                            capability="mcp",
                         )
                     )
                 cursor = result.next_cursor
@@ -88,7 +95,10 @@ class MCPConnection:
         async def invoke():
             result = await self.client.call_tool(name, arguments)
             if result.is_error:
-                raise RuntimeError("MCP tool returned an error")
+                feedback = "\n".join(block.text for block in result.content if block.type == "text")
+                if not feedback and result.structured_content is not None:
+                    feedback = json.dumps(result.structured_content, ensure_ascii=False)
+                raise MCPToolError(feedback or "Remote tool failed without text details")
             if result.structured_content is not None:
                 return result.structured_content
             return "\n".join(block.text for block in result.content if block.type == "text")

@@ -40,6 +40,7 @@ CATALOG = {
         ["channels.py", "channel_store.py"],
     ),
     "models": ("Inference provider adapters", ["models.py"]),
+    "mcp": ("MCP tool discovery, calls and model-facing failure feedback", ["mcp.py", "tools.py"]),
     "tools": ("Workspace, terminal, web and MCP tools", ["tools.py", "capabilities.py", "mcp.py"]),
     "console": (
         "Web interface and authenticated APIs",

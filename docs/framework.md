@@ -151,6 +151,44 @@ math = ["python", "/absolute/path/to/server.py"]
 
 A persistent stdio connection exposes `math__tool_name` tools. Closing the app closes its MCP clients. Optional dependency: official MCP Python SDK v2. Tools are discovered with pagination; the model calls the advertised schemas through normal `Tool` validation. MCP resources, prompts, sampling, elicitation, remote OAuth and media presentation are not yet implemented.
 
+MCP tool results marked `is_error` become `MCPToolError`, a `RuntimeError` subclass
+with explicit model-facing feedback. Text blocks are preferred; structured error
+content is serialized when no text is available. The agent receives bounded JSON
+with `error`, `feedback`, `feedback_chars` and `feedback_truncated`, allowing a
+subsequent model decision to correct arguments. An error result is not retried
+automatically by the bridge; earlier external effects may still need inspection.
+Successful result formats are unchanged, even if their business data contains
+fields named `error` or `is_error`. Transport/protocol exceptions retain the
+ordinary sanitized error handling.
+
+Framework tools can opt into the same feedback contract:
+
+```python
+from evomesh import ToolFeedbackError, tool
+
+
+@tool(source_paths=("company/catalog.py",), capability="catalog")
+def lookup(key: str) -> str:
+    """Look up an authorized catalog key."""
+    if key not in {"red", "blue"}:
+        raise ToolFeedbackError("Choose a catalog key: red or blue.")
+    return key
+```
+
+Feedback is untrusted tool data, not a new instruction source. Only include text
+intended for the model: it can appear in owner-scoped saved conversations/tool
+receipts. Ordinary exception strings remain hidden from the model, and the shared
+evolution ledger records only type, capability and source paths. Error and output
+truncation metrics still apply. Feedback keeps at most 12,000 characters and is
+shortened further so the complete JSON response fits 18,000 characters including
+escaping. Calling an MCP tool directly still raises a `RuntimeError` subclass;
+its `.feedback` attribute exposes the original server feedback to the caller,
+while its ordinary exception string stays generic.
+
+Discovered MCP tools declare `mcp` capability and `src/evomesh/mcp.py` provenance.
+This points evolution at the bridge implementation, not the external server's
+source code, and does not copy raw server diagnostics into shared observations.
+
 Server commands run under the host user. The bridge does not pass EvoMesh API keys into the subprocess; configure server-specific credentials with your own trusted launcher. Treat server output as untrusted data.
 
 ## Optional computer tools
