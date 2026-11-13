@@ -13,9 +13,17 @@ from evomesh.capabilities import WebPageChanged, web_tool
 def web_response(monkeypatch):
     response = {"text": "", "media_type": "text/plain"}
     real_client = httpx.Client
-    monkeypatch.setattr(
-        socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("93.184.216.34", 443))]
-    )
+    real_getaddrinfo = socket.getaddrinfo
+
+    def resolve(host, *args, **kwargs):
+        if host == "example.com":
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", 443))
+            ]
+        # MySQL fixtures and connection pools still need their real resolver.
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
 
     def handler(request):
         return httpx.Response(
@@ -26,6 +34,12 @@ def web_response(monkeypatch):
         httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw)
     )
     return response
+
+
+def test_web_fixture_keeps_database_address_resolution(web_response):
+    addresses = socket.getaddrinfo("127.0.0.1", 3306, type=socket.SOCK_STREAM)
+    assert addresses and all(item[0] == socket.AF_INET for item in addresses)
+    assert all(item[4] == ("127.0.0.1", 3306) for item in addresses)
 
 
 @pytest.mark.parametrize(
