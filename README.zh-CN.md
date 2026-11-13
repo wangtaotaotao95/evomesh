@@ -61,7 +61,7 @@ CLI 自动读取当前目录的 `evomesh.toml`，也支持 `--config`。其中�
 | 执行过程 | `run --events`、任务事件记录 | 事件回调、取消检查、工具调用策略 |
 | 工具扩展 | 配置 Python 插件和 MCP 服务 | `@tool`、`app.register()` |
 | 终端 | 显式开启 local / docker | 可替换终端工具 |
-| 浏览器 | open / snapshot / click / fill / back / screenshot | 每次任务独立的 `BrowserSession` |
+| 浏览器 | open / snapshot / click / fill / press / select / back / screenshot | 每次任务独立的 `BrowserSession`；键盘及原生下拉框操作 |
 | 代码执行 | `execute_code`：Python、local 模式下的 Node.js | 与 Terminal 共用 local / docker 后端 |
 | 文件操作 | `read_file_chunk` / `search_files` / `edit_file` | 分块读取与版本校验、文件/目录分页搜索及行号证据、唯一匹配编辑 |
 | 主动进化 | 空闲检查或独立 `evolution-worker` 周期性检查源码 | `app.evolve_once()` / `ProactiveEvolution.run()`、SQL 租约、可选自动验证合并 |

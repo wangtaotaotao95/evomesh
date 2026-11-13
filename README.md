@@ -80,7 +80,7 @@ Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use 
 | Recurring work | `schedule add --every 3600`; task worker | Transactional schedule tick → task queue |
 | Progress and control | `run --events`, task event receipts | Event callbacks, cancellation, tool policy hooks |
 | Terminal | Opt-in local or restricted Docker backend | `terminal_tool` |
-| Browser | Opt-in Chromium: open, snapshot, click, fill, back, screenshot | `BrowserSession`, per-run lifecycle |
+| Browser | Opt-in Chromium: open, snapshot, click, fill, press, select, back, screenshot | `BrowserSession`, per-run lifecycle and native form controls |
 | Code execution | `execute_code`: Python / local Node.js | `execute_code_tool`, local/Docker backend |
 | File reading/search/edit | `read_file_chunk`, `search_files`, `edit_file` | Bounded pages with digest checks, exact-match editing and file/line evidence |
 | Proactive evolution | Idle reviews or dedicated `evolution-worker` on a shared interval | `app.evolve_once()`, `ProactiveEvolution.run`, SQL leases, optional integration checks |

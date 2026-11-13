@@ -63,6 +63,7 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 ## v0.5 — computer tools and proactive evolution
 
 - [x] Per-task Chromium: open, snapshot, click, fill, back, screenshot
+- [x] Native browser select controls by label/value and element-scoped keyboard actions
 - [x] Python/local JavaScript execute_code with terminal isolation and timeout
 - [x] JSON-safe execution output tails and source-linked truncation evidence/metrics
 - [x] Bounded pipe capture without output spool files; deadline and descendant cleanup

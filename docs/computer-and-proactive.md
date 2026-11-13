@@ -69,7 +69,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 |---|---|
 | `terminal` | Explicit argv, no implicit shell; exit code and bounded output; timeout kills process group |
 | `execute_code` | One-shot Python (`-I`) or local Node.js; print results; same backend/timeout as terminal |
-| `browser` | `open`, `snapshot`, `click`, `fill`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
+| `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
 | `edit_file` | Read first; replace exactly one literal match; rejects missing/ambiguous matches |
@@ -150,6 +150,30 @@ The current text model adapter receives accessibility/text observations, not ima
 
 Browser navigation and subrequests must pass configured host, HTTPS and public-IP
 checks. Redirects are intercepted too; service workers and WebSockets are blocked.
+
+Form controls support `press` with a CSS `selector` and `key` (for example `Enter`,
+`Tab`, `Backspace` or a Playwright key combination). `select` targets a native HTML
+`<select>` using exactly one of `values` or `labels`, each an array of strings.
+Labels let the assistant choose options visible in the accessibility snapshot
+without guessing hidden HTML values. Multiple selections require a native
+`multiple` control; an empty array clears selection. Custom dropdown widgets use
+their normal click/keyboard interactions instead of `select`.
+
+```json
+{"action": "select", "selector": "#language", "labels": ["中文"]}
+```
+
+```json
+{"action": "press", "selector": "#query", "key": "Enter"}
+```
+
+Both actions return the updated page snapshot. They can trigger page events,
+submission or navigation and remain subject to existing host routing checks and
+tool policy hooks. Framework callers use the same operations, for example
+`session.operate("select", selector="#colors", values=["red", "blue"])` and
+`session.operate("press", selector="#query", key="Enter")`. No new configuration
+is needed when browser tools are enabled. Failures retain browser source provenance
+in the evolution ledger without copying selectors, input or option contents.
 Pages can execute JavaScript. DNS preflight is not an egress firewall; deploy inside
 an appropriate network/container boundary when browsing untrusted pages. Browser
 dependencies are optional and loaded lazily; install Chromium on each browser worker.

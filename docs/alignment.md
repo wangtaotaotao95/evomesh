@@ -13,7 +13,7 @@ Hermes emphasizes learning from use, personal memory, scheduled work, messaging 
 | Plans and knowledge | Versioned session plans; bounded cited text retrieval with source freshness; context budget/repeat controls | Executable task DAGs, checkpoint resume, vector search, rich document parsing |
 | Background work | Durable SQL tasks, leases, events, cancellation, explicit retry | Pause/resume checkpoints, executable task graphs and proactive channel notifications |
 | Recurring work | Interval schedules and transactional enqueueing; multi-worker deduplication | Cron/timezone expressions, backoff policies and schedule-to-channel routing |
-| Agent computer | File search/exact edits; local/Docker terminal; Python/local JavaScript execution; per-run Chromium open/snapshot/click/fill/back/screenshot | Interactive PTY, cross-turn browser persistence/profile/takeover, graphical desktop |
+| Agent computer | File search/exact edits; local/Docker terminal; Python/local JavaScript execution; per-run Chromium open/snapshot/click/fill/press/select/back/screenshot | Interactive PTY, cross-turn browser persistence/profile/takeover, graphical desktop |
 | Web access | Allowlisted public HTTPS text retrieval and Chromium interaction | Search-provider adapters |
 | Tool ecosystem | Typed decorators, trusted plugin modules, persistent MCP stdio tools | MCP remote OAuth/resources/prompts/media; packaged connector catalog |
 | Delegation | Named apps, parallel `Team.run`, coordinator delegation tool | Durable subtask graphs, recursive planning and per-child budgets |
