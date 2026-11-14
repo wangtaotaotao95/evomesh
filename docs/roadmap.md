@@ -83,3 +83,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Bounded validation output and active check interruption after detected SQL lease loss
 - [x] Bounded model-facing MCP failure feedback and bridge provenance; reusable framework tool errors
 - [x] JSON-safe web text pagination, extracted-text snapshot checks and source-linked read failures
+- [x] Pinned source catalog pagination and literal prefix filtering for whole-repository review

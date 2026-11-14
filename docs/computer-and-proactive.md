@@ -196,6 +196,22 @@ print(execute.invoke('{"code":"print(sum(range(10)))"}'))
 there are no error observations. The reflector reads a pinned source revision,
 identifies a concrete improvement and calls `record_finding` with previously read
 paths. These source-review observations are distinct from measured runtime errors.
+`list_source(prefix="", offset=0, limit=100)` discovers tracked paths in JSON pages
+at that same pinned Git commit. It returns `base_commit`, `prefix`, `offset`,
+`total_paths`, `paths` and `next_offset`; continue with the same prefix until
+`next_offset` is null. Prefixes are literal repository-relative text (for example,
+`src/evomesh/`), not glob patterns. Offsets count matching paths, and limits range
+from 1 to 200. Pages fit 18,000 characters including JSON escaping, so fewer than
+`limit` paths may be returned. Unicode, spaces, tabs and newlines in Git path names
+are preserved. This replaces the old truncated newline-delimited path string.
+
+The path catalog is loaded into memory on first use and reused for this review;
+concurrent HEAD changes do not change its pages or `read_source`'s revision.
+Listing a path does not count as reading it for a finding, and does not bypass
+existing source-file eligibility checks. Narrow prefixes to conserve model steps:
+pagination removes the inaccessible suffix, but does not make an arbitrarily
+large repository cheap to enumerate or review.
+
 `read_source` returns character-based pages with `offset`, `total_chars` and
 `next_offset`; follow `next_offset` until null to read a complete file. Responses
 include JSON escaping in their size budget, so large or escape-heavy files remain

@@ -10,6 +10,9 @@ from evomesh.store import observations, proposals
 
 
 def source_repo(tmp_path):
+    # Keep the Git fixture separate from the store fixture's SQLite files.
+    tmp_path = tmp_path / "source"
+    tmp_path.mkdir()
     git(tmp_path, "init", "-b", "main")
     (tmp_path / "tool.py").write_text("def answer():\n    return 1\n")
     git(tmp_path, "add", ".")
@@ -229,3 +232,153 @@ def test_rejected_proposal_feedback_guides_corrected_gated_change(store, project
     rows = {row["id"]: row for row in store.list(project)}
     assert rows[rejected]["status"] == "rejected"
     assert rows[identifiers[0]]["observation_ids"] == [evidence]
+
+
+def test_source_catalog_pages_all_paths_at_pinned_revision(store, project, tmp_path):
+    repo = source_repo(tmp_path)
+    paths = [f"src/{index:04d}_" + "x" * 190 + ".py" for index in range(400)]
+    paths += [" leading.py", "src/中文.py", "src/tab\tname.py", "src/line\nname.py", "tool.py"]
+    for path in paths:
+        file = repo / path
+        file.parent.mkdir(exist_ok=True)
+        file.write_text("# synthetic source\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "large catalog")
+    base = revision(repo)
+    assert len(git(repo, "ls-tree", "-r", "--name-only", base)) > 30000
+    received = []
+
+    class Reader:
+        def complete(self, messages, tools):
+            offset = 0
+            if messages[-1]["role"] == "user":
+                # Advance HEAD before the first tool call; discovery must use
+                # the base captured at review start, even on its first page.
+                (repo / "future.py").write_text("# not in review snapshot\n")
+                git(repo, "add", ".")
+                git(repo, "commit", "-m", "concurrent source update")
+            else:
+                raw = messages[-1]["content"]
+                assert len(raw) <= 18000
+                page = json.loads(raw)
+                assert page["base_commit"] == base
+                assert page["offset"] == len(received)
+                assert page["total_paths"] == len(paths)
+                received.extend(page["paths"])
+                offset = page["next_offset"]
+                if offset is None:
+                    return {"role": "assistant", "content": "Inspected source catalog"}
+            return call("list_source", offset=offset, limit=200)
+
+    assert (
+        Agent(Reader(), store, [], project=project, repo=repo, max_steps=64).reflect(proactive=True)
+        == []
+    )
+    assert len(received) == len(paths) and set(received) == set(paths)
+    assert not store.observations(project)
+    assert not store.list(project)
+
+
+def test_filtered_source_discovery_leads_to_evidence_and_validated_edit(store, project, tmp_path):
+    repo = source_repo(tmp_path)
+    base = revision(repo)
+
+    class Reviewer:
+        def __init__(self):
+            self.step = 0
+
+        def complete(self, messages, tools):
+            self.step += 1
+            if self.step == 1:
+                return call("list_source", prefix="tool")
+            if self.step == 2:
+                page = json.loads(messages[-1]["content"])
+                assert page == {
+                    "base_commit": base,
+                    "prefix": "tool",
+                    "offset": 0,
+                    "total_paths": 1,
+                    "paths": ["tool.py"],
+                    "next_offset": None,
+                }
+                return call(
+                    "record_finding", detail="Listing alone is insufficient", paths=["tool.py"]
+                )
+            if self.step == 3:
+                assert json.loads(messages[-1]["content"])["error"] == "ValueError"
+                return call("read_source", path="tool.py")
+            if self.step == 4:
+                assert "return 1" in json.loads(messages[-1]["content"])["content"]
+                return call("record_finding", detail="Answer should be two", paths=["tool.py"])
+            if self.step == 5:
+                return call(
+                    "propose_evolution",
+                    target="tool",
+                    rationale="Return two",
+                    observation_ids=[messages[-1]["content"]],
+                    files=[{"path": "tool.py", "edits": [{"old": "return 1", "new": "return 2"}]}],
+                )
+            return {"role": "assistant", "content": "Submitted"}
+
+    identifiers = Agent(Reviewer(), store, [], project=project, repo=repo).reflect(proactive=True)
+    assert len(identifiers) == 1
+    result = Integrator(
+        store,
+        repo,
+        project,
+        [
+            [sys.executable, "-c", "from tool import answer; assert answer() == 2"],
+        ],
+    ).once()
+    assert result["status"] == "integrated" and result["id"] == identifiers[0]
+    assert source_file(repo, result["commit"], "tool.py").endswith(b"return 2\n")
+    assert revision(repo) == base
+    row = store.list(project)[0]
+    evidence = {r["id"]: r for r in store.observations(project)}
+    assert len(row["observation_ids"]) == 1
+    assert evidence[row["observation_ids"][0]]["kind"] == "source_review"
+
+
+def test_source_catalog_prefix_empty_end_and_invalid_pages(store, project, tmp_path):
+    repo = source_repo(tmp_path)
+    requests = [
+        ({"prefix": "missing/"}, []),
+        ({"offset": 1}, []),
+        ({"prefix": "tool*"}, []),  # Prefixes are literal, not Git pathspecs.
+        ({"offset": 2}, "ValueError"),
+        ({"offset": -1}, "ValidationError"),
+        ({"limit": 0}, "ValidationError"),
+        ({"limit": 201}, "ValidationError"),
+        ({"prefix": "x" * 1001}, "ValidationError"),
+    ]
+
+    class Reader:
+        def __init__(self):
+            self.step = 0
+
+        def complete(self, messages, tools):
+            if self.step:
+                result = json.loads(messages[-1]["content"])
+                expected = requests[self.step - 1][1]
+                if isinstance(expected, str):
+                    assert result["error"] == expected
+                else:
+                    assert result["paths"] == expected and result["next_offset"] is None
+            if self.step == len(requests):
+                return {"role": "assistant", "content": "Finished"}
+            arguments = requests[self.step][0]
+            self.step += 1
+            return call("list_source", **arguments)
+
+    assert Agent(Reader(), store, [], project=project, repo=repo).reflect(proactive=True) == []
+    rows = store.observations(project)
+    assert len(rows) == 5
+    assert all(json.loads(row["detail"])["capability"] == "evolution" for row in rows)
+    assert all(
+        json.loads(row["detail"])["source_paths"]
+        == [
+            "src/evomesh/agent.py",
+            "src/evomesh/evolution.py",
+        ]
+        for row in rows
+    )

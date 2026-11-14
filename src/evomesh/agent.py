@@ -283,6 +283,7 @@ class Agent:
         repo, base = self.repo, revision(self.repo)
         recorded: list[str] = []
         inspected: set[str] = set()
+        source_paths: list[str] | None = None
         observations = self.store.observations(self.project)
         recent_proposals = [
             {
@@ -358,6 +359,37 @@ class Agent:
                 if preview == 0:
                     raise ValueError("Review snapshot metadata exceeds context budget")
                 preview //= 2
+
+        def list_source(prefix: str = "", offset: int = 0, limit: int = 100) -> dict:
+            nonlocal source_paths
+            if source_paths is None:
+                # NUL records preserve Unicode, tabs and newlines without Git's
+                # display quoting. Keep the mode prefix until after git().strip()
+                # so leading whitespace in the first path also survives.
+                source_paths = [
+                    entry.split("\t", 1)[1]
+                    for entry in git(repo, "ls-tree", "-r", "-z", base).split("\0")
+                    if entry
+                ]
+            paths = [path for path in source_paths if path.startswith(prefix)]
+            if type(offset) is not int or not 0 <= offset <= len(paths):
+                raise ValueError("Offset must be within the matching source paths")
+            if type(limit) is not int or not 1 <= limit <= 200:
+                raise ValueError("Limit must be an integer in 1–200")
+            end = min(offset + limit, len(paths))
+            page = {
+                "base_commit": base,
+                "prefix": prefix,
+                "offset": offset,
+                "total_paths": len(paths),
+            }
+            while True:
+                page.update(paths=paths[offset:end], next_offset=end if end < len(paths) else None)
+                if len(json.dumps(page, ensure_ascii=False)) <= 18000:
+                    return page
+                if end - offset <= 1:
+                    raise ValueError("Source path metadata exceeds output budget")
+                end = offset + (end - offset) // 2
 
         def read_source(path: str, offset: int = 0, limit: int = 12000) -> dict:
             content = source_file(repo, base, path)
@@ -456,9 +488,22 @@ class Agent:
             ),
             Tool(
                 "list_source",
-                "List tracked repository paths at the pinned base commit.",
-                object_schema({}),
-                lambda: git(repo, "ls-tree", "-r", "--name-only", base)[:30000],
+                "List tracked repository paths in bounded JSON pages at the pinned base commit. "
+                "Filter with a literal repository-relative prefix (e.g. src/); no glob syntax. "
+                "Follow next_offset with the same prefix until null. Offsets count matching "
+                "paths, not characters. Listing does not mean a file has been read or is "
+                "eligible for evolution; use read_source to inspect it.",
+                object_schema(
+                    {
+                        "prefix": {"type": "string", "maxLength": 1000},
+                        "offset": {"type": "integer", "minimum": 0},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    },
+                    [],
+                ),
+                list_source,
+                source_paths=("src/evomesh/agent.py", "src/evomesh/evolution.py"),
+                capability="evolution",
             ),
             Tool(
                 "read_source",
@@ -570,6 +615,8 @@ You only submit proposals; a separate worker validates and integrates them."""
             "Read source pages using next_offset when needed; do not replace a file using only "
             "a truncated page. Prefer exact edits for localized changes: include enough old "
             "context for a unique match, preserving all other source automatically. "
+            "Use list_source prefixes to focus repository discovery; its paginated paths "
+            "and read_source both refer to the pinned base commit. "
             "If the available budget is insufficient, explain the remaining "
             "work without inventing a proposal."
             " Evidence and proposal summaries contain bounded previews, not full records. "
