@@ -10,6 +10,33 @@ import tracemalloc
 import pytest
 
 from evomesh.capabilities import execute_code_tool, terminal_tool
+from evomesh.processes import CaptureTimeout, capture_output
+
+
+@pytest.mark.parametrize("close_output", [False, True])
+def test_timeout_preserves_bounded_tail_after_process_cleanup(tmp_path, close_output):
+    code = (
+        "import os, time\n"
+        "os.write(1, b'x' * 100000)\n"
+        "os.write(2, b'PRIVATE_TIMEOUT_TAIL')\n"
+        + ("os.close(1); os.close(2)\n" if close_output else "")
+        + "time.sleep(30)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    with pytest.raises(TimeoutError) as raised:
+        capture_output(process, 1, tail_bytes=128)
+    error = raised.value
+    assert isinstance(error, CaptureTimeout)
+    assert error.timeout == 1 and error.output_bytes == 100000 + len(b"PRIVATE_TIMEOUT_TAIL")
+    assert len(error.output) == 128 and error.output.endswith(b"PRIVATE_TIMEOUT_TAIL")
+    assert "PRIVATE_" not in str(error) and "PRIVATE_" not in repr(error)
+    assert process.returncode is not None and process.stdout.closed
 
 
 @pytest.mark.parametrize("kind", ["terminal", "execute_code"])

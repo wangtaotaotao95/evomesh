@@ -248,6 +248,24 @@ existing SQL evidence links, test gates and explicit deployment remain in place.
 `Agent.reflect()` and `AgentApp.evolve_once()` share this behavior without a schema
 migration on SQLite or MySQL.
 
+When an integration check times out, its rejection report retains earlier checks'
+reports and up to 8,000 bytes of the timed-out command's captured output tail.
+The report identifies the deadline, bytes captured before it, and whether older
+output was truncated. Partial output is explicitly incomplete: it is not a passing
+gate, and later checks do not run. Process-group cleanup completes before the
+report is returned; neither the integration branch nor running code adopts the
+candidate. The next review can inspect this diagnostic with `read_review_record`
+and propose a correction that must pass the same checks. As with other validation
+reports, candidate output is stored in the shared ledger; use synthetic validation
+data and avoid printing credentials or private conversation content.
+
+At the framework capture layer, deadlines raise `evomesh.processes.CaptureTimeout`,
+a `TimeoutError` subclass with `timeout`, `output` (bounded bytes) and `output_bytes`
+(bytes captured before the deadline). Its string representation contains no output.
+Existing `except TimeoutError` handlers continue to work for terminal/code tools;
+their ordinary model-facing error still omits raw timeout output. Guards such as
+SQL lease-loss checks continue to interrupt validation independently of deadlines.
+
 For a localized improvement, `propose_evolution` accepts `edits` instead of `content`
 for an existing file. Read the relevant source page first, then provide unique
 literal matches (including surrounding context when necessary):

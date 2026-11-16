@@ -11,7 +11,7 @@ import tempfile
 import threading
 from pathlib import Path, PurePosixPath
 
-from .processes import capture_output
+from .processes import CaptureTimeout, capture_output
 from .store import LeaseLost, Store
 
 
@@ -250,16 +250,24 @@ class Integrator:
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
+                timed_out = False
                 try:
                     code, tail, size = capture_output(
                         process, self.timeout, tail_bytes=8000, guard=guard
                     )
-                except TimeoutError:
-                    raise ValueError(f"Validation timed out: {command[0]}") from None
+                except CaptureTimeout as exc:
+                    timed_out = True
+                    tail, size = exc.output, exc.output_bytes
                 report = tail.decode(errors="replace")
                 if size > len(tail):
                     report = f"[Output truncated: {size} bytes; showing tail]\n" + report
                 reports.append(f"{command!r}\n{report}")
+                if timed_out:
+                    reports.append(
+                        f"[Validation timed out after {self.timeout:g}s; "
+                        f"captured {size} bytes before deadline; output may be incomplete]"
+                    )
+                    raise ValueError("Validation timed out\n" + "\n".join(reports))
                 if code:
                     raise ValueError("Validation failed\n" + "\n".join(reports))
         return "\n".join(reports)

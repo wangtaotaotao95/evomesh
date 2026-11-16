@@ -1,6 +1,7 @@
 import json
 import sys
 
+import pytest
 from sqlalchemy import update
 
 from evomesh import Agent
@@ -173,7 +174,10 @@ def test_review_record_rejects_outside_snapshot_and_wrong_fields(store, project,
     assert store.list(project) == []
 
 
-def test_rejected_proposal_feedback_guides_corrected_gated_change(store, project, tmp_path):
+@pytest.mark.parametrize("timeout_failure", [False, True])
+def test_rejected_proposal_feedback_guides_corrected_gated_change(
+    store, project, tmp_path, timeout_failure
+):
     repo = source_repo(tmp_path)
     base = revision(repo)
     evidence = store.observe(project, "replica", "feedback", "answer should return 2")
@@ -187,10 +191,16 @@ def test_rejected_proposal_feedback_guides_corrected_gated_change(store, project
         changes=[make_change(repo, base, "tool.py", "def answer():\n    return 3\n")],
         observation_ids=[evidence],
     )
-    checks = [
-        [sys.executable, "-c", "from tool import answer; assert answer() == 2, 'EXPECTED_TWO'"]
-    ]
-    integrator = Integrator(store, repo, project, checks)
+    code = "from tool import answer; assert answer() == 2, 'EXPECTED_TWO'"
+    if timeout_failure:
+        code = (
+            "import time\nfrom tool import answer\n"
+            "if answer() != 2:\n"
+            "    print('EXPECTED_TWO', flush=True)\n"
+            "    time.sleep(30)\n"
+        )
+    checks = [[sys.executable, "-c", code]]
+    integrator = Integrator(store, repo, project, checks, timeout=1)
     assert integrator.once()["status"] == "rejected"
 
     class Corrector:
@@ -206,6 +216,9 @@ def test_rejected_proposal_feedback_guides_corrected_gated_change(store, project
             if self.step == 2:
                 page = json.loads(messages[-1]["content"])
                 assert "EXPECTED_TWO" in page["content"]
+                if timeout_failure:
+                    assert "EXPECTED_TWO\n" in page["content"]
+                    assert "Validation timed out" in page["content"]
                 assert page["metadata"]["observation_ids"] == [evidence]
                 return call("read_source", path="tool.py")
             if self.step == 3:

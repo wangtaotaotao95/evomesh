@@ -236,6 +236,38 @@ def test_timeout_and_checked_out_branch(store, repo, project):
         worker(store, repo, project, branch="main").once()
 
 
+def test_timeout_report_keeps_prior_checks_and_bounded_partial_output(store, repo, project):
+    identifier = proposal(store, repo, project)
+    before = revision(repo)
+    result = Integrator(
+        store,
+        repo,
+        project,
+        [
+            [sys.executable, "-c", "print('FIRST_GATE_PASSED')"],
+            [
+                sys.executable,
+                "-c",
+                "import os, time; os.write(1, b'x' * 100000); "
+                "os.write(2, b'WAITING_FOR_FIXTURE'); time.sleep(30)",
+            ],
+            [sys.executable, "-c", "print('LATER_GATE_MUST_NOT_RUN')"],
+        ],
+        timeout=1,
+    ).once()
+    report = result["report"]
+    assert result["id"] == identifier and result["status"] == "rejected"
+    assert result["commit"] is None
+    assert "FIRST_GATE_PASSED\n" in report and "WAITING_FOR_FIXTURE\n" in report
+    assert "LATER_GATE_MUST_NOT_RUN" not in report
+    assert "Output truncated: 100019 bytes" in report
+    assert "Validation timed out after 1s; captured 100019 bytes before deadline" in report
+    assert "output may be incomplete" in report and len(report) < 9000
+    assert store.list(project)[0]["report"] == report
+    assert revision(repo, "evolution/main") == revision(repo) == before
+    assert git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
 def test_candidate_code_is_imported_and_credentials_removed(store, repo, project, monkeypatch):
     monkeypatch.setenv("EVOMESH_API_KEY", "test-secret")
     proposal(store, repo, project, "src/candidate.py", "VALUE = 42\n")

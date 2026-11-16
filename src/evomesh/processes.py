@@ -8,6 +8,16 @@ import time
 from collections.abc import Callable
 
 
+class CaptureTimeout(TimeoutError):
+    """Command deadline with bounded captured bytes, never output in its message."""
+
+    def __init__(self, timeout: float, output: bytes, output_bytes: int):
+        super().__init__("Command timed out")
+        self.timeout = timeout
+        self.output = output
+        self.output_bytes = output_bytes
+
+
 def capture_output(
     process: subprocess.Popen,
     timeout: float,
@@ -19,6 +29,8 @@ def capture_output(
 
     The caller must spawn with stdout=PIPE and start_new_session=True. Guards
     run between bounded reads/waits, including after EOF while the process lives.
+    Deadlines raise CaptureTimeout with the tail and bytes captured before the
+    deadline. Cleanup completes before the caller receives the exception.
     """
     deadline = time.monotonic() + timeout
     tail, size = b"", 0
@@ -55,7 +67,7 @@ def capture_output(
                         raise
         return code, tail, size
     except subprocess.TimeoutExpired:
-        raise TimeoutError("Command timed out") from None
+        raise CaptureTimeout(timeout, tail, size) from None
     finally:
         # Children can outlive the leader, including while holding output pipes.
         try:
