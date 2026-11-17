@@ -72,7 +72,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 | `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
-| `edit_file` | Read first; replace exactly one literal match; rejects missing/ambiguous matches |
+| `edit_file` | Preserve UTF-8 text and line endings; reject overlapping/ambiguous matches; optional snapshot digest |
 
 `terminal` and `execute_code` return `exit_code`, `output`, `output_bytes` and
 `truncated`. Output combines stdout/stderr and retains the tail of at most 20,000
@@ -134,6 +134,22 @@ Both the personal assistant and embedded `AgentApp` register this tool by defaul
 framework users can also obtain it through `workspace_tools(root)`. Tool failures
 carry `src/evomesh/tools.py` provenance into the SQL evolution ledger, without
 storing file contents or arguments in the failure observation.
+
+`read_file` and `read_file_chunk` preserve decoded UTF-8 text, including BOM and
+CRLF/CR/LF line endings; neither performs newline normalization. `edit_file`
+replaces one literal occurrence and leaves all other characters intact. Overlapping
+occurrences count as ambiguous (`aa` occurs twice in `aaa`), so include more context
+to make the match unique. Missing/ambiguous matches, invalid UTF-8, NUL bytes and
+edits that would exceed 100 KB are rejected before writing.
+
+For an edit based on a prior read, pass the `sha256` returned by `read_file_chunk`
+as `expected_sha256` to `edit_file`. A changed file raises `FileVersionChanged`
+even if the targeted fragment is still present; reread and reconsider the edit.
+Existing calls without the digest remain supported. This is a check against the
+bytes read at edit start, not an atomic filesystem compare-and-swap or distributed
+lock. Applications with concurrent writers must still coordinate writes. Both
+assistant and framework tools use this behavior, and rejected edits feed the same
+source-linked evolution observations without copying file contents or paths.
 
 Local terminal/code execution has host-user permissions. Environment scrubbing is
 not a sandbox: local code can access host files and the network. Docker is nonroot,

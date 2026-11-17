@@ -125,15 +125,7 @@ def workspace_tools(root: Path) -> list[Tool]:
             raise ValueError("Private metadata is not exposed to tools")
         return candidate
 
-    def read_file(path: str) -> str:
-        file = resolve(path)
-        if file.stat().st_size > 100_000:
-            raise ValueError("File exceeds 100 KB")
-        return file.read_text(encoding="utf-8")
-
-    def read_file_chunk(
-        path: str, offset: int = 0, limit: int = 12000, expected_sha256: str | None = None
-    ) -> dict:
+    def read_bytes(path: str) -> bytes:
         file = resolve(path)
         if not file.is_file():
             raise ValueError("Expected a regular workspace file")
@@ -143,6 +135,15 @@ def workspace_tools(root: Path) -> list[Tool]:
             raise ValueError("File exceeds 100 KB")
         if b"\0" in raw:
             raise ValueError("Expected UTF-8 text, not binary content")
+        return raw
+
+    def read_file(path: str) -> str:
+        return read_bytes(path).decode("utf-8")
+
+    def read_file_chunk(
+        path: str, offset: int = 0, limit: int = 12000, expected_sha256: str | None = None
+    ) -> dict:
+        raw = read_bytes(path)
         digest = hashlib.sha256(raw).hexdigest()
         if expected_sha256 is not None and expected_sha256 != digest:
             raise FileVersionChanged(
@@ -165,9 +166,13 @@ def workspace_tools(root: Path) -> list[Tool]:
             if not p.name.startswith(".")
         )[:200]
 
-    def edit_file(path: str, old: str, new: str) -> str:
-        content = read_file(path)
-        if not old or content.count(old) != 1:
+    def edit_file(path: str, old: str, new: str, expected_sha256: str | None = None) -> str:
+        raw = read_bytes(path)
+        if expected_sha256 is not None and hashlib.sha256(raw).hexdigest() != expected_sha256:
+            raise FileVersionChanged("File changed; read it again before editing")
+        content = raw.decode("utf-8")
+        start = content.find(old)
+        if not old or start < 0 or content.find(old, start + 1) >= 0:
             raise ValueError("Expected exactly one match; read the file before editing")
         return write_file(path, content.replace(old, new, 1))
 
@@ -291,8 +296,17 @@ def workspace_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             "edit_file",
-            "Replace exactly one literal match in a workspace text file.",
-            object_schema({key: {"type": "string"} for key in ("path", "old", "new")}),
+            "Replace exactly one literal match (including overlapping matches) in a workspace "
+            "UTF-8 text file, preserving other characters and line endings. Optionally pass "
+            "expected_sha256 from read_file_chunk; FileVersionChanged means reread before "
+            "editing. This checks the read snapshot, not an atomic multi-writer lock.",
+            object_schema(
+                {
+                    **{key: {"type": "string"} for key in ("path", "old", "new")},
+                    "expected_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                },
+                ["path", "old", "new"],
+            ),
             edit_file,
             source_paths=("src/evomesh/tools.py",),
         ),
