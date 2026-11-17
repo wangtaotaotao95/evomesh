@@ -99,7 +99,34 @@ evomesh evaluate evals/offline.json --factory examples.evaluation_factory:create
 
 The factory is trusted operator-selected `module:function` code and creates a fresh `AgentApp` for each case. Local modules are resolved from the current directory. The bundled factory uses a temporary workspace/database and the offline demo model. For real evaluations, build a disposable fixture factory with your chosen model and authorized tools; the evaluator actually runs them. It does not automatically choose live providers or copy production state.
 
-Each case must have a unique name, prompt and at least one explicit assertion: `contains`, `not_contains`, `required_tools`, `forbidden_tools`, `max_model_calls`, `max_tool_calls`, `max_tool_errors`, or `max_duration_seconds`. Tool assertions refer to attempted calls. A duration budget is checked after the run, not a hard interrupt. Each case must complete successfully too. Reports contain check results and metrics, not raw prompts/answers; exceptions retain type only. Suite fingerprints prevent unrelated baseline/candidate comparisons. Exit status is nonzero when a case fails. `evaluate(factory, cases)` and `compare_reports(baseline, candidate)` are callable APIs.
+Each case must have a unique name, prompt and at least one explicit assertion: `contains`, `not_contains`, `required_tools`, `forbidden_tools`, `file_sha256`, `max_model_calls`, `max_tool_calls`, `max_tool_errors`, or `max_duration_seconds`. Tool assertions refer to attempted calls. A duration budget is checked after the run, not a hard interrupt. Each case must complete successfully too. Reports contain check results and metrics, not raw prompts/answers; exceptions retain type only. Suite fingerprints prevent unrelated baseline/candidate comparisons. Exit status is nonzero when a case fails. `evaluate(factory, cases)` and `compare_reports(baseline, candidate)` are callable APIs.
+
+`file_sha256` checks actual workspace artifacts after the run and before the app
+factory closes. Supply a mapping of 1–20 relative paths to lowercase SHA-256 digests:
+
+```python
+import hashlib
+
+case = {
+    "name": "save-note",
+    "prompt": "Save exactly hello followed by a newline to result.txt",
+    "file_sha256": {"result.txt": hashlib.sha256(b"hello\n").hexdigest()},
+    "max_tool_errors": 0,
+}
+```
+
+Hashing uses exact bytes, including line endings, and supports binary artifacts.
+Missing files, directories, unreadable files, symlinks (including symlink parents),
+digest mismatches and files exceeding 10 MiB fail the assertion. Reads use bounded
+chunks. Absolute paths, traversal and private metadata paths such as `.env`/`.git`
+are rejected before the factory runs. Reports expose only the aggregate
+`checks.file_sha256` boolean, without artifact paths, contents or actual digests.
+Expectations participate in the suite fingerprint and existing CLI/integration gates.
+
+This is a final-state assertion, not proof that the current run created a file.
+Use a fresh disposable workspace and combine it with tool assertions when useful.
+Do not let concurrent writers modify artifacts during evaluation. These checks do
+not establish semantic document quality or replace independent acceptance policy.
 
 Add an evaluation to the existing integration checks:
 

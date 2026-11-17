@@ -130,6 +130,8 @@ MCP 服务端标记的工具失败会把有界反馈交给模型，用于纠正�
 
 ## 主动全域进化
 
+行为评估支持 `file_sha256` 断言，按预期摘要检查工作区实际文件，避免把“回答说已保存”当成产物正确。断言可直接作为自进化集成门禁；报告只记录检查结果，不包含文件内容。支持文本和二进制文件，单文件上限 10 MiB。详见[评估说明](docs/agent-capabilities.md)。
+
 配置 `proactive_evolution = true` 后，console/task-worker 在空闲时按 `evolution_interval_seconds` 主动检查源码，即使没有错误记录也能发现改进机会。实例通过共享 SQL 租约协调，同一项目同时只运行一轮检查；发现必须引用读过的源码，提案关联检查证据。
 
 用户任务较多时，可先执行 `evomesh init`，再独立运行 `evomesh evolution-worker --interval 60`。它只负责主动进化，不消费用户任务；轮询频率不会绕过数据库中的进化周期和租约。此时可将任务进程的 `proactive_evolution` 设为 `false`，避免它占用用户任务执行时间。专用进程收到 SIGINT/SIGTERM 后完成当前轮次再退出。`--once` 只执行一轮到期检查，框架也可通过 `ProactiveEvolution.run(stop_event, ...)` 托管运行。

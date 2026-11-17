@@ -9,6 +9,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
+from pathlib import Path
+
+from .evolution import safe_path
 
 
 def validate_suite(cases):
@@ -26,6 +30,7 @@ def validate_suite(cases):
         "max_tool_calls",
         "max_duration_seconds",
         "max_tool_errors",
+        "file_sha256",
     }
     for case in cases:
         if not isinstance(case, dict) or set(case) - allowed:
@@ -36,6 +41,16 @@ def validate_suite(cases):
         if case["name"] in names:
             raise ValueError("Case names must be unique")
         names.add(case["name"])
+        if "file_sha256" in case:
+            files = case["file_sha256"]
+            if not isinstance(files, dict) or not 1 <= len(files) <= 20:
+                raise ValueError("file_sha256 requires 1–20 workspace paths and SHA-256 digests")
+            for path, digest in files.items():
+                if not isinstance(path, str) or len(path) > 1000 or "\0" in path:
+                    raise ValueError("Expected a bounded workspace-relative path")
+                safe_path(path)
+                if not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+                    raise ValueError("Expected a lowercase SHA-256 digest")
         for key in ("contains", "not_contains", "required_tools", "forbidden_tools"):
             if key in case and (
                 not isinstance(case[key], list)
@@ -57,21 +72,54 @@ def validate_suite(cases):
             raise ValueError("Every case needs explicit behavioral assertions or budgets")
 
 
+def _files_match(workspace, expected):
+    root = Path(workspace).resolve()
+    for name, digest in expected.items():
+        path = root / name
+        try:
+            # Check actual artifacts, never a symlink to an unrelated file.
+            if any(
+                part.is_symlink()
+                for part in [path, *path.parents]
+                if part != root and part.is_relative_to(root)
+            ):
+                return False
+            if not path.resolve().is_relative_to(root) or not path.is_file():
+                return False
+            hashed, size = hashlib.sha256(), 0
+            with path.open("rb") as stream:
+                while chunk := stream.read(65536):
+                    size += len(chunk)
+                    if size > 10 * 1024 * 1024:
+                        return False
+                    hashed.update(chunk)
+            if hashed.hexdigest() != digest:
+                return False
+        except (OSError, ValueError, RuntimeError):
+            return False
+    return True
+
+
 def evaluate(factory, cases):
     validate_suite(cases)
     rows = []
     for case in cases:
         events, answer, error, metrics = [], "", None, {}
+        files_match = False
         try:
             with factory() as app:
                 try:
                     answer = app.run(case["prompt"], session="evaluation", on_event=events.append)
+                    if "file_sha256" in case:
+                        files_match = _files_match(app.config.workspace, case["file_sha256"])
                 finally:
                     metrics = app.last_run_metrics or {}
         except Exception as exc:
             error = type(exc).__name__
         called = {e["tool"] for e in events if e["kind"] == "tool_started"}
         checks = {"completed": error is None and metrics.get("status") == "succeeded"}
+        if "file_sha256" in case:
+            checks["file_sha256"] = files_match
         for key in ("contains", "not_contains", "required_tools", "forbidden_tools"):
             if key not in case:
                 continue

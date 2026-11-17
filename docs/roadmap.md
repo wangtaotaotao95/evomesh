@@ -86,3 +86,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Pinned source catalog pagination and literal prefix filtering for whole-repository review
 - [x] Retain bounded partial validation output after timeouts for evidence-based correction
 - [x] Preserve workspace line endings during exact edits; reject overlap and stale read snapshots
+- [x] Actual workspace artifact digest assertions in behavioral evaluation and integration gates
