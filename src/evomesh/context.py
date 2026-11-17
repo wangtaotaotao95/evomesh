@@ -12,6 +12,26 @@ def request_size(messages, tools):
     return len(json.dumps({"messages": messages, "tools": tools}, ensure_ascii=False))
 
 
+def _result_preview(content):
+    """Replace incomplete tool data with an explicit, JSON-safe preview envelope."""
+    limit = min(600, len(json.dumps(content, ensure_ascii=False)) - 1)
+    preview = {
+        "context_truncated": True,
+        "original_chars": len(content),
+        "preview": content[:350],
+        "notice": "Tool output shortened by context budget. Preview is incomplete data, "
+        "not the original result. Do not infer success or automatically repeat an action "
+        "to recover its output.",
+    }
+    while True:
+        output = json.dumps(preview, ensure_ascii=False)
+        # The envelope is itself a string in the request JSON; count both layers
+        # of escaping so control-heavy tool output cannot inflate the preview.
+        if len(json.dumps(output, ensure_ascii=False)) <= limit:
+            return output
+        preview["preview"] = preview["preview"][: len(preview["preview"]) // 2]
+
+
 def fit_context(messages, tools, budget):
     """Character budget, not a tokenizer estimate. Never truncate instructions or the task.
 
@@ -31,9 +51,7 @@ def fit_context(messages, tools, budget):
             if message["role"] == "tool" and isinstance(message.get("content"), str):
                 content = message["content"]
                 if len(content) > 500:
-                    message["content"] = (
-                        content[:350] + "\n[Tool output shortened by context budget]"
-                    )
+                    message["content"] = _result_preview(content)
                     shortened += 1
                 if request_size(fitted, tools) <= budget:
                     break

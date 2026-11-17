@@ -50,6 +50,21 @@ Skill source changes still use normal `target="skill"` proposals. Skill loading 
 
 `context_chars` defaults to 120000 and measures the serialized messages/tool-schema JSON, not provider tokens. Before inference, a copy drops the oldest **complete user turns**, then shortens large tool results in the active turn if necessary. System instructions, the current user request and tool-call/result associations are preserved. Full stored history is unaffected by this inference-only compaction, apart from the pre-existing turn-count retention and tool-result limits. If instructions/current input/schemas still exceed the budget, execution stops with `ContextBudgetExceeded`; it never silently chops the user's request or invents a summary.
 
+Shortened tool results are explicit JSON preview envelopes, with
+`context_truncated=true`, `original_chars`, `preview` and `notice`. The preview is
+an incomplete string prefix of the original tool response; it is **not** the
+original response schema. This applies to both structured and plain-text output.
+Status, pagination cursors and other omitted fields must not be inferred from it.
+The envelope stays within 600 characters when serialized as a request string,
+including both layers of JSON escaping. Tool-call IDs and full saved receipts are
+unchanged. Unshortened results keep their original format.
+
+The notice warns against inferring success or automatically repeating an action
+just to recover its output. Compaction does not rerun tools or generate a semantic
+summary. Context pressure continues to emit metrics and shared evolution evidence
+without copying tool content. Applications with scripted model adapters should
+recognize this envelope whenever they enable context compaction.
+
 `repeat_limit` defaults to 3 identical tool-name + canonical-argument attempts per turn, including nonconsecutive repeats. The next identical invocation stops before executing. This can interrupt intentional polling/repetition; configure a higher limit (up to 20) for that use case. It does not roll back earlier actions. Tool result truncation is explicitly labeled.
 
 Context pressure/overflow, repeated calls, retrieval misses and tool errors produce structured observations with capability/source hints. They avoid raw prompts, queries, file contents and exception text. Limits remain operator configuration; reflection proposes source changes and cannot silently rewrite a running instance's settings.
