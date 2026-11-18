@@ -134,3 +134,80 @@ def test_small_success_has_no_truncation_evidence(tmp_path, store, project):
     assert agent.metrics["tool_output_truncations"] == 0
     assert agent.metrics["tool_errors"] == 0
     assert store.observations(project) == []
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"", b"short\n", b"x" * 40000, b'\x01\t\\"' * 10000, ("中文🙂" * 5000).encode()],
+    ids=["empty", "short", "byte-overflow", "escaped", "unicode"],
+)
+def test_timeout_feedback_preserves_tail_budget_and_exception_contract(content):
+    from evomesh.capabilities import ExecutionTimeout
+    from evomesh.processes import CaptureTimeout
+    from evomesh.tools import ToolFeedbackError
+
+    if content:
+        content += b"PRIVATE_FINAL_DIAGNOSTIC\n"
+    tail = content[-20000:]
+    error = ExecutionTimeout(CaptureTimeout(1, tail, len(content)))
+    assert isinstance(error, TimeoutError) and isinstance(error, ToolFeedbackError)
+    assert error.timeout == 1 and error.output == tail and error.output_bytes == len(content)
+    assert "PRIVATE" not in str(error) and "PRIVATE" not in repr(error)
+    result = error.model_result()
+    raw = json.dumps(result, ensure_ascii=False)
+    assert len(raw) <= 18000
+    assert result["error"] == "ExecutionTimeout" and result["timed_out"]
+    assert result["output_incomplete"] and result["timeout_seconds"] == 1
+    assert result["output_bytes"] == len(content)
+    assert result["feedback_truncated"] is (result["feedback"] != content.decode(errors="replace"))
+    if content:
+        assert result["feedback"].endswith("PRIVATE_FINAL_DIAGNOSTIC\n")
+    else:
+        assert result["feedback"] == "" and not result["feedback_truncated"]
+
+
+@pytest.mark.parametrize("kind", ["terminal", "execute_code"])
+@pytest.mark.parametrize("large", [False, True])
+def test_timeout_feedback_reaches_model_and_private_evolution_evidence(
+    tmp_path, store, project, kind, large
+):
+    content = ("\x01" * 40000 if large else "") + "PRIVATE_TIMEOUT_DIAGNOSTIC\n"
+    code = (
+        f"import os, time; os.write(1, b'\\x01' * {40000 if large else 0} "
+        "+ b'PRIVATE_TIMEOUT_DIAGNOSTIC\\n'); time.sleep(30)"
+    )
+    tool = (
+        terminal_tool(tmp_path, timeout=1)
+        if kind == "terminal"
+        else execute_code_tool(tmp_path, timeout=1)
+    )
+    args = {"command": [sys.executable, "-c", code]} if kind == "terminal" else {"code": code}
+
+    def verify(raw):
+        result = json.loads(raw)
+        assert len(raw) <= 18000
+        assert result["error"] == "ExecutionTimeout" and result["timed_out"]
+        assert result["output_incomplete"]
+        assert result["feedback"].endswith("PRIVATE_TIMEOUT_DIAGNOSTIC\n")
+        assert result["feedback_truncated"] is large
+        assert result["output_bytes"] == len(content.encode())
+        assert "Earlier actions may have taken effect" in result["hint"]
+
+    with AgentApp(
+        Config(project=project, workspace=tmp_path),
+        store=store,
+        tools=[tool],
+        model=SingleCall(tool.name, args, verify),
+    ) as app:
+        assert app.run("Synthetic timeout") == "Done"
+        assert app.last_run_metrics["tool_errors"] == 1
+        assert app.last_run_metrics["tool_output_truncations"] == int(large)
+    rows = store.observations(project)
+    errors = [row for row in rows if row["kind"] == "tool_error"]
+    assert len(errors) == 1
+    detail = json.loads(errors[0]["detail"])
+    assert detail["error"] == "ExecutionTimeout"
+    assert detail["capability"] == ("terminal" if kind == "terminal" else "execution")
+    assert detail["source_paths"] == ["src/evomesh/capabilities.py", "src/evomesh/processes.py"]
+    assert len([row for row in rows if row["kind"] == "tool_output_limit"]) == int(large)
+    assert all("PRIVATE_TIMEOUT_DIAGNOSTIC" not in row["detail"] for row in rows)

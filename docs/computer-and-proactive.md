@@ -95,6 +95,25 @@ execution remains trusted host execution, not process isolation. Docker cleanup
 also removes the named container. These guarantees use POSIX process groups and
 pipe selectors (Linux/macOS), not a Windows terminal backend.
 
+On timeout, `terminal` and `execute_code` give the assistant an `ExecutionTimeout`
+error with a bounded diagnostic tail in `feedback`, `timeout_seconds`, and
+`output_bytes` (bytes captured before the deadline). `output_incomplete` is always
+true: a timeout cannot establish successful completion. `feedback_truncated`
+separately reports whether captured output was dropped for the tail/JSON budget;
+it may be false even though execution was interrupted. The complete error receipt
+fits within 18,000 characters, retaining the end of diagnostics when shortened.
+The assistant must inspect earlier effects before retrying; no automatic replay
+is introduced. Output is untrusted and remains part of the private conversation,
+while shared evolution records contain error type, capability and source paths
+without command arguments or diagnostics. Truncated feedback also increments the
+existing output-limit metric and evidence.
+
+Framework callers still catch `TimeoutError`, or import the more specific
+`ExecutionTimeout` from `evomesh.capabilities`. Its `timeout`, `output` (bounded
+bytes), and `output_bytes` attributes expose the captured evidence; `model_result()`
+returns the same bounded receipt used by the assistant. Exception messages do not
+contain raw output. Normal completed-command results are unchanged.
+
 For long workspace files, call `read_file_chunk` with `path` and optionally `limit`
 (1–12,000 characters). Follow the returned `next_offset` until null, supplying the
 returned `sha256` as `expected_sha256` on each subsequent call. The digest covers

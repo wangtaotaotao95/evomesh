@@ -89,3 +89,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Preserve workspace line endings during exact edits; reject overlap and stale read snapshots
 - [x] Actual workspace artifact digest assertions in behavioral evaluation and integration gates
 - [x] Explicit JSON-safe tool previews under context pressure, preserving complete saved receipts
+- [x] Partial terminal/code timeout diagnostics for corrective reasoning, with private evolution evidence
