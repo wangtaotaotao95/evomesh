@@ -69,7 +69,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 |---|---|
 | `terminal` | Explicit argv, no implicit shell; exit code and bounded output; timeout kills process group |
 | `execute_code` | One-shot Python (`-I`) or local Node.js; print results; same backend/timeout as terminal |
-| `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
+| `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
 | `edit_file` | Preserve UTF-8 text and line endings; reject overlapping/ambiguous matches; optional snapshot digest |
@@ -190,6 +190,32 @@ tool policy hooks. Framework callers use the same operations, for example
 `session.operate("press", selector="#query", key="Enter")`. No new configuration
 is needed when browser tools are enabled. Failures retain browser source provenance
 in the evolution ledger without copying selectors, input or option contents.
+
+For asynchronously updated pages, use `wait` with a CSS `selector` after the
+triggering action. `state` defaults to `visible`; `hidden` also accepts a removed
+element, `attached` requires DOM presence (even if hidden), and `detached` requires
+absence. These follow [Playwright locator wait semantics](https://playwright.dev/python/docs/api/class-locator#locator-wait-for).
+
+```json
+{"action": "wait", "selector": "#results", "state": "visible"}
+```
+
+```json
+{"action": "wait", "selector": "#loading", "state": "hidden"}
+```
+
+A successful wait returns a fresh page snapshot; an already satisfied condition
+returns immediately. Waiting does not repeat the preceding click or submission.
+Each wait uses the session's operation timeout (15 seconds by default); framework
+callers can choose a finite positive `BrowserSession(..., timeout=5)` in seconds
+and call `session.operate("wait", selector="#results")`. This timeout bounds the
+condition wait, not the combined wait and subsequent snapshot. An unmet condition
+raises `TimeoutError` and leaves the session usable; AgentApp records a tool error
+with browser source provenance in the shared SQL evolution ledger, without the
+selector or page content. A hidden/absent indicator alone does not prove an
+operation succeeded; inspect the resulting page. This is element-state waiting,
+not a general network-idle or text-matching API.
+
 Pages can execute JavaScript. DNS preflight is not an egress firewall; deploy inside
 an appropriate network/container boundary when browsing untrusted pages. Browser
 dependencies are optional and loaded lazily; install Chromium on each browser worker.

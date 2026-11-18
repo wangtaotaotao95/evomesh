@@ -241,3 +241,130 @@ def test_chromium_select_by_value_label_clear_and_keyboard_submit(tmp_path, monk
             "colors": ["blue"],
             "name": ["EvoMesh"],
         }
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), True, "15", None])
+def test_browser_timeout_must_be_bounded(tmp_path, timeout):
+    with pytest.raises(ValueError, match="finite positive"):
+        BrowserSession(tmp_path, ["example.com"], timeout=timeout)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"selector": ""},
+        {"selector": "#result", "state": ""},
+        {"selector": "#result", "state": "ready"},
+        {"selector": "#result", "state": []},
+    ],
+)
+def test_wait_arguments_rejected_before_browser_start(tmp_path, arguments):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        with pytest.raises(ValueError, match="selector|Wait state"):
+            session.operate("wait", **arguments)
+        assert session.page is None and session.driver is None
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        with pytest.raises(ValueError, match="Open a page first"):
+            session.operate("wait", selector="#result")
+
+
+@pytest.fixture
+def async_browser_page(monkeypatch):
+    if os.getenv("EVOMESH_TEST_BROWSER") != "1":
+        pytest.skip("Enable EVOMESH_TEST_BROWSER after playwright install chromium")
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))]
+    )
+    original = BrowserSession._start
+
+    def start(self):
+        original(self)
+        self.context.route(
+            "https://example.com/**",
+            lambda route: route.fulfill(
+                content_type="text/html",
+                body="""<title>Async fixture</title>
+                <div id="result" hidden>Ready</div><div id="loading">Loading</div>
+                <div id="pending">Pending</div><p id="status">Idle</p>
+                <button onclick="setTimeout(() => {
+                  document.querySelector('#result').hidden = false;
+                  document.querySelector('#loading').hidden = true;
+                  document.querySelector('#pending').remove();
+                  const marker = document.createElement('div');
+                  marker.id = 'marker'; marker.hidden = true;
+                  document.body.appendChild(marker);
+                  document.querySelector('#status').textContent = 'Completed';
+                }, 200)">Start</button>""",
+            ),
+        )
+
+    monkeypatch.setattr(BrowserSession, "_start", start)
+
+
+@pytest.mark.parametrize(
+    "selector,state",
+    [("#result", None), ("#loading", "hidden"), ("#pending", "detached"), ("#marker", "attached")],
+)
+def test_chromium_wait_for_async_page(tmp_path, async_browser_page, selector, state):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        tool = browser_tool(lambda: session)
+        session.operate("open", url="https://example.com/")
+        session.operate("click", selector="button")
+        args = {"action": "wait", "selector": selector}
+        if state is not None:
+            args["state"] = state
+        result = json.loads(tool.invoke(json.dumps(args)))
+        assert result["title"] == "Async fixture"
+        assert "Ready" in result["text"] and "Completed" in result["snapshot"]
+        assert "Loading" not in result["text"] and "Pending" not in result["text"]
+        # Already satisfied conditions return a fresh snapshot too.
+        assert session.operate("wait", selector=selector, state=state) == result
+
+
+def test_chromium_wait_timeout_evolution_evidence(store, project, tmp_path, async_browser_page):
+    from playwright.sync_api import TimeoutError as BrowserTimeoutError
+
+    class Model:
+        def complete(self, messages, tools):
+            if messages[-1]["role"] == "tool":
+                result = json.loads(messages[-1]["content"])
+                assert result["error"] == "TimeoutError"
+                assert "PRIVATE" not in messages[-1]["content"]
+                return {"role": "assistant", "content": "Wait timed out"}
+            schema = next(t for t in tools if t["function"]["name"] == "browser")
+            assert "wait" in schema["function"]["parameters"]["properties"]["action"]["enum"]
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "wait",
+                        "type": "function",
+                        "function": {
+                            "name": "browser",
+                            "arguments": json.dumps(
+                                {"action": "wait", "selector": "#PRIVATE_MISSING"}
+                            ),
+                        },
+                    }
+                ],
+            }
+
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        session.operate("open", url="https://example.com/")
+        # Keep browser launch independent of the deliberately short operation timeout.
+        session.executor.submit(session.context.set_default_timeout, 200).result()
+        with pytest.raises(BrowserTimeoutError):
+            session.operate("wait", selector="#result")
+        with AgentApp(
+            Config(project=project, workspace=tmp_path), store=store, model=Model()
+        ) as app:
+            app.register(browser_tool(lambda: session))
+            assert app.run("Synthetic async page") == "Wait timed out"
+            assert app.last_run_metrics["tool_errors"] == 1
+        assert session.operate("snapshot")["title"] == "Async fixture"
+    row = store.observations(project)[0]
+    detail = json.loads(row["detail"])
+    assert row["kind"] == "tool_error" and detail["capability"] == "browser"
+    assert detail["source_paths"] == ["src/evomesh/browser.py"]
+    assert "PRIVATE" not in row["detail"] and "Async fixture" not in row["detail"]

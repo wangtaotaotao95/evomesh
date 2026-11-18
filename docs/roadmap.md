@@ -64,6 +64,7 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 
 - [x] Per-task Chromium: open, snapshot, click, fill, back, screenshot
 - [x] Native browser select controls by label/value and element-scoped keyboard actions
+- [x] Browser element-state waits for asynchronous results, with timeout evidence and fresh snapshots
 - [x] Python/local JavaScript execute_code with terminal isolation and timeout
 - [x] JSON-safe execution output tails and source-linked truncation evidence/metrics
 - [x] Bounded pipe capture without output spool files; deadline and descendant cleanup
