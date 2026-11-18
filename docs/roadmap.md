@@ -90,3 +90,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Actual workspace artifact digest assertions in behavioral evaluation and integration gates
 - [x] Explicit JSON-safe tool previews under context pressure, preserving complete saved receipts
 - [x] Partial terminal/code timeout diagnostics for corrective reasoning, with private evolution evidence
+- [x] Complete paginated workspace directory discovery with listing-change detection and provenance

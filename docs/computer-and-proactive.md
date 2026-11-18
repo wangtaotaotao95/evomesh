@@ -70,6 +70,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 | `terminal` | Explicit argv, no implicit shell; exit code and bounded output; timeout kills process group |
 | `execute_code` | One-shot Python (`-I`) or local Node.js; print results; same backend/timeout as terminal |
 | `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
+| `list_files_page` | Paginated directory names with listing digest checks; directories end in `/` |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
 | `edit_file` | Preserve UTF-8 text and line endings; reject overlapping/ambiguous matches; optional snapshot digest |
@@ -113,6 +114,27 @@ Framework callers still catch `TimeoutError`, or import the more specific
 bytes), and `output_bytes` attributes expose the captured evidence; `model_result()`
 returns the same bounded receipt used by the assistant. Exception messages do not
 contain raw output. Normal completed-command results are unchanged.
+
+For complete directory discovery, use `list_files_page` (default `path="."`,
+`offset=0`, `limit=100`; at most 200 entries per page). It returns sorted `entries`,
+`total_entries`, `offset`, `next_offset`, and `sha256`. Follow `next_offset` with
+the same path and digest as `expected_sha256` until null. Page size may shrink to
+keep the complete JSON within 18,000 characters, including escaped filenames.
+Directories end with `/`; hidden entries, symlinks and special files are excluded.
+The legacy `list_files` still returns only the first 200 names as a list.
+
+```json
+{"path": "notes", "offset": 100, "expected_sha256": "<sha256 from the first page>"}
+```
+
+`DirectoryChanged` provides restart guidance to the assistant and source-linked
+error evidence to evolution without copying directory names into the shared
+ledger. Framework callers obtain the same tool from `workspace_tools(workspace)`
+and can catch `evomesh.tools.DirectoryChanged`. Each call enumerates and sorts the
+whole directory; only response size is bounded. The digest checks visible names
+and file/directory types, not file contents, and is not a filesystem lock or an
+atomic snapshot under concurrent mutation. Restart at zero without the old digest
+when entries change. Ordinary next-page availability is not an output-limit error.
 
 For long workspace files, call `read_file_chunk` with `path` and optionally `limit`
 (1–12,000 characters). Follow the returned `next_offset` until null, supplying the

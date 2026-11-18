@@ -93,6 +93,10 @@ class ToolFeedbackError(RuntimeError):
         return result
 
 
+class DirectoryChanged(ToolFeedbackError):
+    """The visible directory entries differ from the caller's listing snapshot."""
+
+
 def text_page(content: str, offset: int = 0, limit: int = 12000, **metadata) -> dict:
     """Build a character page that fits the agent's tool limit including JSON escaping."""
     if type(offset) is not int or not 0 <= offset <= len(content):
@@ -165,6 +169,45 @@ def workspace_tools(root: Path) -> list[Tool]:
             for p in resolve(path).iterdir()
             if not p.name.startswith(".")
         )[:200]
+
+    def list_files_page(
+        path: str = ".", offset: int = 0, limit: int = 100, expected_sha256: str | None = None
+    ) -> dict:
+        directory = resolve(path)
+        if not directory.is_dir():
+            raise ValueError("Expected a workspace directory")
+        entries = []
+        for entry in directory.iterdir():
+            if entry.name.startswith(".") or entry.is_symlink():
+                continue
+            if entry.is_dir():
+                entries.append(entry.name + "/")
+            elif entry.is_file():
+                entries.append(entry.name)
+        entries.sort()
+        digest = hashlib.sha256(
+            json.dumps(entries, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if expected_sha256 is not None and expected_sha256 != digest:
+            raise DirectoryChanged(
+                "Directory listing changed. Restart at offset zero without expected_sha256; "
+                "do not combine pages from different listings."
+            )
+        if type(offset) is not int or not 0 <= offset <= len(entries):
+            raise ValueError("Offset must be within the directory listing")
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError("Limit must be an integer in 1–200")
+        end = min(offset + limit, len(entries))
+        result = {"sha256": digest, "offset": offset, "total_entries": len(entries)}
+        while True:
+            result.update(
+                entries=entries[offset:end], next_offset=end if end < len(entries) else None
+            )
+            if len(json.dumps(result, ensure_ascii=False)) <= 18000:
+                return result
+            if end - offset <= 1:
+                raise ValueError("Directory entry exceeds output budget")
+            end = offset + (end - offset) // 2
 
     def edit_file(path: str, old: str, new: str, expected_sha256: str | None = None) -> str:
         raw = read_bytes(path)
@@ -290,9 +333,29 @@ def workspace_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             "list_files",
-            "List a workspace directory; use '.' for its root.",
+            "List the first 200 visible directory entries; use list_files_page for complete "
+            "paginated discovery. Use '.' for the workspace root.",
             path_schema,
             list_files,
+        ),
+        Tool(
+            "list_files_page",
+            "List sorted workspace directory entries in bounded JSON pages. Directories end "
+            "with '/'; hidden entries, symlinks and special files are excluded. Follow "
+            "next_offset with the same path and returned sha256 as expected_sha256. "
+            "On DirectoryChanged restart at zero without the old digest. The digest covers "
+            "entry names/types, not file contents. Each call rescans the directory.",
+            object_schema(
+                {
+                    "path": {"type": "string"},
+                    "offset": {"type": "integer", "minimum": 0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    "expected_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                },
+                [],
+            ),
+            list_files_page,
+            source_paths=("src/evomesh/tools.py",),
         ),
         Tool(
             "edit_file",
