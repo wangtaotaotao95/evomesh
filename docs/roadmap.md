@@ -92,3 +92,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Partial terminal/code timeout diagnostics for corrective reasoning, with private evolution evidence
 - [x] Complete paginated workspace directory discovery with listing-change detection and provenance
 - [x] Search previews centered on actual long-line matches, with Unicode character coordinates
+- [x] Reject invalid execution deadlines and evolution leases before work; clean up invalid capture calls

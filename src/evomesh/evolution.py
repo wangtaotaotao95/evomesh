@@ -11,7 +11,7 @@ import tempfile
 import threading
 from pathlib import Path, PurePosixPath
 
-from .processes import CaptureTimeout, capture_output
+from .processes import CaptureTimeout, capture_output, validate_seconds
 from .store import LeaseLost, Store
 
 
@@ -195,8 +195,8 @@ class Integrator:
     ):
         if not checks or any(not check for check in checks):
             raise ValueError("At least one validation command is required")
-        if timeout <= 0 or lease_seconds < 3:
-            raise ValueError("Positive timeout and a lease of at least 3 seconds are required")
+        validate_seconds(timeout)
+        validate_seconds(lease_seconds, "lease_seconds", minimum=3)
         self.store, self.repo, self.project = store, repo.resolve(), project
         self.checks, self.branch = checks, branch
         self.timeout, self.lease_seconds = timeout, lease_seconds

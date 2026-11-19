@@ -1,11 +1,25 @@
 """Bounded POSIX process capture shared by tools and evolution validation."""
 
+import math
 import os
 import selectors
 import signal
 import subprocess
 import time
 from collections.abc import Callable
+
+
+def validate_seconds(value, name="timeout", *, minimum=0):
+    """Reject invalid deadlines/leases before starting work or claiming SQL state."""
+    valid = not isinstance(value, bool) and isinstance(value, (int, float))
+    if valid:
+        try:
+            valid = math.isfinite(value) and value > 0 and value >= minimum
+        except OverflowError:
+            valid = False
+    if not valid:
+        suffix = f" and at least {minimum:g} seconds" if minimum else ""
+        raise ValueError(f"{name} must be a finite positive number{suffix}")
 
 
 class CaptureTimeout(TimeoutError):
@@ -32,7 +46,6 @@ def capture_output(
     Deadlines raise CaptureTimeout with the tail and bytes captured before the
     deadline. Cleanup completes before the caller receives the exception.
     """
-    deadline = time.monotonic() + timeout
     tail, size = b"", 0
 
     def remaining():
@@ -44,6 +57,8 @@ def capture_output(
         return min(seconds, 0.1) if guard else seconds
 
     try:
+        validate_seconds(timeout)
+        deadline = time.monotonic() + timeout
         if type(tail_bytes) is not int or tail_bytes <= 0:
             raise ValueError("tail_bytes must be a positive integer")
         with process.stdout, selectors.DefaultSelector() as selector:
@@ -75,3 +90,5 @@ def capture_output(
         except ProcessLookupError:
             pass
         process.wait()
+        if process.stdout is not None:
+            process.stdout.close()

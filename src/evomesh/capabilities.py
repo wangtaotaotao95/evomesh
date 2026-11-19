@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .processes import CaptureTimeout, capture_output
+from .processes import CaptureTimeout, capture_output, validate_seconds
 from .tools import Tool, ToolFeedbackError, object_schema, text_page
 
 
@@ -54,6 +54,7 @@ class ExecutionTimeout(ToolFeedbackError, TimeoutError):
 def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) -> Tool:
     if backend not in {"local", "docker"}:
         raise ValueError("Unknown terminal backend")
+    validate_seconds(timeout)
     root = workspace.resolve()
     root.mkdir(parents=True, exist_ok=True)
 

@@ -115,6 +115,17 @@ bytes), and `output_bytes` attributes expose the captured evidence; `model_resul
 returns the same bounded receipt used by the assistant. Exception messages do not
 contain raw output. Normal completed-command results are unchanged.
 
+Terminal/code timeouts must be finite positive numbers of seconds (fractional
+values are supported). Tool factories reject zero, negatives, booleans, nonnumeric
+values, NaN and infinity before creating a workspace or launching local/Docker
+commands. `Integrator` applies the same timeout validation before Git/SQL work;
+its lease and `ProactiveEvolution` leases must also be finite and at least 3
+seconds. This prevents malformed limits from starting work with an unusable
+deadline or lease. Low-level `capture_output` callers already own a spawned
+process: invalid timeout or tail-buffer arguments raise `ValueError` after process
+group cleanup and pipe closure. Valid timeout diagnostics and lease-loss behavior
+are unchanged.
+
 For complete directory discovery, use `list_files_page` (default `path="."`,
 `offset=0`, `limit=100`; at most 200 entries per page). It returns sorted `entries`,
 `total_entries`, `offset`, `next_offset`, and `sha256`. Follow `next_offset` with

@@ -9,6 +9,7 @@ import uuid
 from sqlalchemy import Column, String, Table, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from .processes import validate_seconds
 from .runtime_store import LONG, OPTIONS, metadata, timestamp
 from .store import LeaseLost
 
@@ -27,6 +28,7 @@ cycles = Table(
 
 class ProactiveEvolution:
     def __init__(self, app, lease_seconds=120):
+        validate_seconds(lease_seconds, "lease_seconds", minimum=3)
         self.app = app
         self.engine = app.store.engine
         self.project = app.config.project
