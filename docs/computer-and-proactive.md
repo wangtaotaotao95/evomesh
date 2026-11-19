@@ -229,6 +229,30 @@ downloads, arbitrary evaluate tool or desktop takeover is provided. Screenshots 
 saved as `browser-artifacts/<id>.png` inside the workspace and returned as paths.
 The current text model adapter receives accessibility/text observations, not images.
 
+Every browser result fits within an 18,000-character JSON budget, including
+escaping and screenshot paths. `original_chars` records the full lengths of
+`url`, `title`, `snapshot` and `text`; `truncated_fields` names clipped fields and
+`truncated` reports whether any were clipped. Initial field limits are 4,096 URL,
+1,000 title, 12,000 accessibility snapshot and 6,000 text characters; fields may
+shrink further to fit the total budget. Clipped strings are previews, including
+the accessibility text; do not treat them as complete page evidence. This bounds
+returned output, not Chromium memory or the initial extraction size.
+
+To recover content outside a whole-page preview, use `snapshot` with a CSS
+`selector` matching one element, for example:
+
+```json
+{"action": "snapshot", "selector": "main"}
+```
+
+Framework callers use `session.operate("snapshot", selector="main")`. Only the
+accessibility/text fields are scoped; URL/title remain page metadata. Omitting
+the selector reads the body. Other actions continue to return whole-page
+snapshots. This is a fresh live read, not pagination or a frozen DOM snapshot;
+a selected element can still exceed the budget. Clipping increments browser
+output-limit metrics and source-linked evolution evidence without copying page
+text, titles, selectors or URLs into the shared ledger.
+
 Browser navigation and subrequests must pass configured host, HTTPS and public-IP
 checks. Redirects are intercepted too; service workers and WebSockets are blocked.
 

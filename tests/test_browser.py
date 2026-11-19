@@ -368,3 +368,105 @@ def test_chromium_wait_timeout_evolution_evidence(store, project, tmp_path, asyn
     assert row["kind"] == "tool_error" and detail["capability"] == "browser"
     assert detail["source_paths"] == ["src/evomesh/browser.py"]
     assert "PRIVATE" not in row["detail"] and "Async fixture" not in row["detail"]
+
+
+@pytest.mark.parametrize("content", ["small", "x" * 20000, '\x01\\"' * 8000, "中文🙂" * 8000])
+def test_browser_snapshot_budget_includes_escaping_metadata_and_screenshot(content):
+    from evomesh.browser import _bounded_snapshot
+
+    original = {field: content for field in ("url", "title", "snapshot", "text")}
+    original["screenshot"] = "browser-artifacts/" + "a" * 32 + ".png"
+    result = _bounded_snapshot(original)
+    assert len(json.dumps(result, ensure_ascii=False)) <= 18000
+    assert result["screenshot"] == original["screenshot"]
+    assert result["original_chars"] == {
+        field: len(content) for field in ("url", "title", "snapshot", "text")
+    }
+    clipped = [field for field in result["original_chars"] if result[field] != content]
+    assert result["truncated_fields"] == clipped and result["truncated"] is bool(clipped)
+    assert all(content.startswith(result[field]) for field in result["original_chars"])
+    assert original["text"] == content  # The receipt builder must not modify the source.
+    if content == "small":
+        assert not result["truncated"]
+
+
+def test_chromium_scoped_snapshot_recovers_large_page_and_records_private_evidence(
+    tmp_path, store, project, monkeypatch
+):
+    if os.getenv("EVOMESH_TEST_BROWSER") != "1":
+        pytest.skip("Enable EVOMESH_TEST_BROWSER after playwright install chromium")
+    from html import escape
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))]
+    )
+    original = BrowserSession._start
+    large = '\\"' * 18000
+
+    def start(self):
+        original(self)
+        self.context.route(
+            "https://example.com/**",
+            lambda route: route.fulfill(
+                content_type="text/html",
+                body="<title>Snapshot fixture</title><pre>"
+                + escape(large)
+                + '</pre><main id="result">PRIVATE_TARGET</main>',
+            ),
+        )
+
+    monkeypatch.setattr(BrowserSession, "_start", start)
+
+    class Model:
+        def __init__(self):
+            self.step = 0
+
+        def complete(self, messages, tools):
+            self.step += 1
+            if self.step > 1:
+                raw = messages[-1]["content"]
+                assert len(raw) <= 18000
+                page = json.loads(raw)
+                assert page["title"] == "Snapshot fixture"
+                if self.step == 2:
+                    assert page["truncated"] and "text" in page["truncated_fields"]
+                    assert page["original_chars"]["text"] > 36000
+                    assert "PRIVATE_TARGET" not in page["text"]
+                else:
+                    assert not page["truncated"] and page["truncated_fields"] == []
+                    assert page["text"] == "PRIVATE_TARGET"
+                    assert "PRIVATE_TARGET" in page["snapshot"]
+                    return {"role": "assistant", "content": "Read the target element"}
+            args = (
+                {"action": "open", "url": "https://example.com/"}
+                if self.step == 1
+                else {"action": "snapshot", "selector": "#result"}
+            )
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "browser",
+                        "type": "function",
+                        "function": {"name": "browser", "arguments": json.dumps(args)},
+                    }
+                ],
+            }
+
+    with AgentApp(
+        Config(
+            project=project, workspace=tmp_path, browser=True, browser_allowed_hosts=["example.com"]
+        ),
+        store=store,
+        model=Model(),
+    ) as app:
+        assert app.run("Synthetic large page") == "Read the target element"
+        assert app.last_run_metrics["tool_errors"] == 0
+        assert app.last_run_metrics["tool_output_truncations"] == 1
+    rows = store.observations(project)
+    assert len(rows) == 1 and rows[0]["kind"] == "tool_output_limit"
+    detail = json.loads(rows[0]["detail"])
+    assert detail["capability"] == "browser" and detail["tool_truncated"]
+    assert detail["source_paths"] == ["src/evomesh/browser.py"]
+    assert detail["output_chars"] <= 18000
+    assert "PRIVATE_TARGET" not in rows[0]["detail"] and "example.com" not in rows[0]["detail"]

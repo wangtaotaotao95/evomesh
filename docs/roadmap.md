@@ -93,3 +93,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Complete paginated workspace directory discovery with listing-change detection and provenance
 - [x] Search previews centered on actual long-line matches, with Unicode character coordinates
 - [x] Reject invalid execution deadlines and evolution leases before work; clean up invalid capture calls
+- [x] JSON-safe browser snapshots with explicit clipping evidence and selector-scoped recovery
