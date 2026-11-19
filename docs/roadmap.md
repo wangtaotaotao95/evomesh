@@ -91,3 +91,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Explicit JSON-safe tool previews under context pressure, preserving complete saved receipts
 - [x] Partial terminal/code timeout diagnostics for corrective reasoning, with private evolution evidence
 - [x] Complete paginated workspace directory discovery with listing-change detection and provenance
+- [x] Search previews centered on actual long-line matches, with Unicode character coordinates

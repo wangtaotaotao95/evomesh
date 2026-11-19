@@ -153,8 +153,21 @@ the existing `matches` and `truncated` fields, adding `next_offset`,
 `scan_limit_reached`, `scanned_files` and `skipped_files`. The complete JSON page
 fits within 18,000 characters, including escaping. Follow `next_offset` with the
 same query/path; fewer than `limit` results may be returned to fit the budget.
-Each citation keeps its workspace-relative path, line number and first 500
-characters of line text; use file reading for the rest of a long matching line.
+Each citation keeps its workspace-relative path, line number and up to 500
+characters of text around the first literal match on that line. Short lines keep
+the existing `path`, `line`, `text` shape. Long lines additionally report `column`
+(1-based position of the first match), `match_chars` (full query length),
+`text_offset` (0-based start of the excerpt within the line), `line_chars`, and
+`text_truncated=true`. Positions count Unicode characters, not UTF-8 bytes or
+visual columns; tabs are one character. A query of up to 500 characters remains
+fully visible, with preceding context when space permits. For a longer query,
+the excerpt begins at the match and shows its first 500 characters; read the
+file to inspect the full match or surrounding text.
+
+`text_truncated` describes a line excerpt, while the page-level `truncated`
+indicates another result page or the scan ceiling. Excerpt clipping alone is not
+an output-limit observation because the complete file remains available through
+file reading. This applies equally to assistant calls and `workspace_tools` users.
 
 Each call rescans in deterministic directory/file order, examining at most 1,000
 candidate files. Hidden entries and directory symlinks are excluded from recursive

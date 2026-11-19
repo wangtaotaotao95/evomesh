@@ -276,12 +276,25 @@ def workspace_tools(root: Path) -> list[Tool]:
                 skipped += 1
                 continue
             for number, line in enumerate(content.splitlines(), 1):
-                if query not in line:
+                position = line.find(query)
+                if position < 0:
                     continue
                 if seen < offset:
                     seen += 1
                     continue
-                match = {"path": relative, "line": number, "text": line[:500]}
+                # Keep the first match visible instead of always clipping the line's head.
+                # Queries longer than the preview still expose their full span as metadata.
+                context_before = min(100, max(0, 500 - len(query)))
+                start = min(max(0, position - context_before), max(0, len(line) - 500))
+                match = {"path": relative, "line": number, "text": line[start : start + 500]}
+                if len(line) > 500:
+                    match.update(
+                        column=position + 1,
+                        match_chars=len(query),
+                        text_offset=start,
+                        line_chars=len(line),
+                        text_truncated=True,
+                    )
                 # Leave room for metadata; count escaping, separators and brackets.
                 size = len(json.dumps(match, ensure_ascii=False)) + (2 if matches else 0)
                 if len(matches) >= limit or output_size + size > 17000:
@@ -379,8 +392,11 @@ def workspace_tools(root: Path) -> list[Tool]:
             "evidence in bounded pages; follow next_offset with the same query/path. Offsets "
             "count matching lines. Each call rescans up to 1,000 files; if scan_limit_reached, "
             "narrow path instead of claiming no matches. Files may change between pages. "
-            "skipped_files counts unreadable, binary or oversized files; text previews use "
-            "the first 500 characters of each matching line.",
+            "skipped_files counts unreadable, binary or oversized files. Text previews use "
+            "up to 500 characters around the first match. Long lines add column (1-based), "
+            "match_chars, text_offset (0-based within the line), line_chars and text_truncated. "
+            "column and text_offset count Unicode characters, not bytes. "
+            "Read the file for full long matches.",
             object_schema(
                 {
                     "query": {"type": "string", "minLength": 1},
