@@ -71,13 +71,18 @@ def source_file(repo: Path, commit: str, path: str) -> bytes | None:
     safe_path(path)
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
         raise ValueError("Expected a full commit SHA")
-    entry = git(repo, "ls-tree", commit, "--", path)
+    # Read size/type from the pinned tree before materializing any blob. The
+    # same bound applies during reflection, proposal validation and integration.
+    entry = git(repo, "--literal-pathspecs", "ls-tree", "-l", "-z", commit, "--", path)
     if not entry:
         return None
     if not entry.startswith(("100644 blob ", "100755 blob ")):
         raise ValueError("Only regular text files can evolve")
+    _, _, blob, size = entry.split("\t", 1)[0].split()
+    if int(size) > 100_000:
+        raise ValueError("Source file exceeds 100 KB")
     return subprocess.run(
-        ["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True, check=True
+        ["git", "-C", str(repo), "cat-file", "blob", blob], capture_output=True, check=True
     ).stdout
 
 
@@ -101,8 +106,6 @@ def make_edit_change(repo: Path, commit: str, path: str, edits: list[dict]) -> d
     old = source_file(repo, commit, path)
     if old is None:
         raise ValueError("Exact edits require an existing source file")
-    if len(old) > 100_000:
-        raise ValueError("Source file exceeds 100 KB")
     content = old.decode("utf-8")
     if "\0" in content:
         raise ValueError("Only UTF-8 text sources are supported")
@@ -146,6 +149,8 @@ def validate_changes(repo: Path, base: str, changes: list[dict]) -> None:
         content = change["content"]
         if content is not None and (not isinstance(content, str) or "\0" in content):
             raise ValueError("Only UTF-8 text changes are supported")
+        if content is not None and len(content.encode("utf-8")) > 100_000:
+            raise ValueError("Changed source exceeds 100 KB")
         if (content.encode() if content is not None else None) == old:
             raise ValueError(f"No change: {path}")
 

@@ -393,8 +393,6 @@ class Agent:
 
         def read_source(path: str, offset: int = 0, limit: int = 12000) -> dict:
             content = source_file(repo, base, path)
-            if content is not None and len(content) > 100_000:
-                raise ValueError("Source file exceeds 100 KB")
             if content is None:
                 return {"path": path, "content": None, "next_offset": None}
             result = text_page(content.decode(), offset, limit, path=path)
@@ -519,6 +517,8 @@ class Agent:
                     ["path"],
                 ),
                 read_source,
+                source_paths=("src/evomesh/agent.py", "src/evomesh/evolution.py"),
+                capability="evolution",
             ),
             Tool(
                 "propose_evolution",

@@ -395,3 +395,46 @@ def test_source_catalog_prefix_empty_end_and_invalid_pages(store, project, tmp_p
         ]
         for row in rows
     )
+
+
+def test_oversized_source_failure_has_provenance_and_does_not_count_as_inspection(
+    store, project, tmp_path
+):
+    repo = source_repo(tmp_path)
+    (repo / "large.py").write_text("PRIVATE_SYNTHETIC_CONTENT" * 5000)
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Oversized review fixture")
+
+    class Reader:
+        def __init__(self):
+            self.step = 0
+
+        def complete(self, messages, tools):
+            self.step += 1
+            if self.step == 1:
+                return call("read_source", path="large.py")
+            if self.step == 2:
+                assert json.loads(messages[-1]["content"])["error"] == "ValueError"
+                return call("record_finding", detail="Must not be saved", paths=["large.py"])
+            if self.step == 3:
+                assert json.loads(messages[-1]["content"])["error"] == "ValueError"
+                return call("read_source", path="tool.py")
+            if self.step == 4:
+                assert "return 1" in json.loads(messages[-1]["content"])["content"]
+                return call("record_finding", detail="Valid inspection", paths=["tool.py"])
+            return {"role": "assistant", "content": "Review complete"}
+
+    assert Agent(Reader(), store, [], project=project, repo=repo).reflect(proactive=True) == []
+    rows = store.observations(project)
+    failure = next(
+        json.loads(row["detail"])
+        for row in rows
+        if json.loads(row["detail"]).get("tool") == "read_source"
+    )
+    assert failure["capability"] == "evolution"
+    assert failure["source_paths"] == ["src/evomesh/agent.py", "src/evomesh/evolution.py"]
+    findings = [json.loads(row["detail"]) for row in rows if row["kind"] == "source_review"]
+    assert len(findings) == 1 and findings[0]["source_paths"] == ["tool.py"]
+    assert "PRIVATE_SYNTHETIC_CONTENT" not in json.dumps(rows)
+    assert "Must not be saved" not in json.dumps(rows)
+    assert not store.list(project)

@@ -1,3 +1,4 @@
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -78,6 +79,83 @@ def test_exact_edits_use_pinned_blob_and_preserve_unrelated_bytes(repo):
     assert change["content"] == original.replace("value = 1", "value = 3")
     assert change["before_sha256"] == make_change(repo, base, "large.py", "unused")["before_sha256"]
     assert (repo / "large.py").read_text() == "uncommitted user edit"
+
+
+@pytest.mark.parametrize("content", [b"x" * 100001, "你".encode() * 33334])
+def test_oversized_source_is_rejected_before_reading_blob(repo, monkeypatch, content):
+    (repo / "large.py").write_bytes(content)
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Oversized synthetic source")
+    base = revision(repo)
+    original_run = subprocess.run
+
+    def metadata_only(args, **kwargs):
+        assert "cat-file" not in args and "show" not in args, "Blob must not be materialized"
+        return original_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", metadata_only)
+    for action in (
+        lambda: source_file(repo, base, "large.py"),
+        lambda: make_change(repo, base, "large.py", None),
+        lambda: make_edit_change(repo, base, "large.py", [{"old": "x", "new": "y"}]),
+    ):
+        with pytest.raises(ValueError, match="Source file exceeds 100 KB"):
+            action()
+
+
+@pytest.mark.parametrize("name", ["source.py", "tab\tline\n.py", ":(glob)*.py"])
+def test_source_size_boundary_reads_exact_pinned_bytes(repo, name):
+    original = "你".encode() * 33333 + b"\n"
+    file = repo / name
+    file.write_bytes(original)
+    file.chmod(0o755)
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Boundary synthetic source")
+    base = revision(repo)
+    file.write_text("x" * 100001)
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "New oversized revision")
+    assert source_file(repo, base, name) == original
+    with pytest.raises(ValueError, match="100 KB"):
+        source_file(repo, revision(repo), name)
+
+
+def test_source_metadata_still_rejects_nonregular_files(repo):
+    (repo / "link").symlink_to("tool.py")
+    (repo / "folder").mkdir()
+    (repo / "folder" / "file.py").write_text("pass\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-m", "Synthetic nonregular paths")
+    base = revision(repo)
+    assert source_file(repo, base, "missing.py") is None
+    for path in ("link", "folder"):
+        with pytest.raises(ValueError, match="Only regular"):
+            source_file(repo, base, path)
+
+
+@pytest.mark.parametrize("size", [100000, 100001])
+def test_full_replacement_size_checked_before_sql_and_at_integration(store, repo, project, size):
+    base = revision(repo)
+    changes = [make_change(repo, base, "tool.py", "#" * size)]
+    arguments = dict(
+        project=project, instance="test", target="code", rationale="Synthetic size boundary"
+    )
+    if size == 100000:
+        identifier = submit(store, repo, base=base, changes=changes, **arguments)
+        result = worker(store, repo, project).once()
+        assert result["status"] == "integrated" and result["id"] == identifier
+        assert len(source_file(repo, result["commit"], "tool.py")) == size
+    else:
+        with pytest.raises(ValueError, match="Changed source exceeds 100 KB"):
+            submit(store, repo, base=base, changes=changes, **arguments)
+        assert not store.list(project)
+        # Another instance or an older client can write directly to the ledger.
+        identifier = store.submit(base_commit=base, changes=changes, **arguments)
+        result = worker(store, repo, project).once()
+        assert result["status"] == "rejected" and result["id"] == identifier
+        assert revision(repo, "evolution/main") == base
+    assert revision(repo) == base
+    assert (repo / "tool.py").read_text() == "def answer():\n    return 1\n"
 
 
 @pytest.mark.parametrize(

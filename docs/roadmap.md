@@ -94,3 +94,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Search previews centered on actual long-line matches, with Unicode character coordinates
 - [x] Reject invalid execution deadlines and evolution leases before work; clean up invalid capture calls
 - [x] JSON-safe browser snapshots with explicit clipping evidence and selector-scoped recovery
+- [x] Check pinned Git blob sizes before source reads; enforce the same per-file bound at proposal and integration gates

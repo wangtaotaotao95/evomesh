@@ -346,8 +346,14 @@ large repository cheap to enumerate or review.
 `read_source` returns character-based pages with `offset`, `total_chars` and
 `next_offset`; follow `next_offset` until null to read a complete file. Responses
 include JSON escaping in their size budget, so large or escape-heavy files remain
-valid JSON below the tool output limit. Files remain bounded to 100 KB. Never build
-a full replacement from only one partial source page.
+valid JSON below the tool output limit. Before reading a Git blob, the shared source
+reader checks its pinned tree metadata and rejects files larger than 100,000 bytes.
+This also applies to proposal creation and integration, including deletion of an
+oversized existing file. Full replacement/new-file content has the same byte limit
+as exact-edit results; older or directly queued oversized proposals are rejected
+by the integration gate. This bounds source bytes returned to Python, not Git's own
+memory use when reading packed objects. Never build a full replacement from only
+one partial source page.
 
 Manual and proactive reflection start with summaries of the latest 20 observations
 and 10 proposals in the configured project. The summary JSON is bounded to 18,000
