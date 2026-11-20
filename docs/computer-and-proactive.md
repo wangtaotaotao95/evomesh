@@ -67,13 +67,31 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 
 | Tool | Behavior |
 |---|---|
-| `terminal` | Explicit argv, no implicit shell; exit code and bounded output; timeout kills process group |
-| `execute_code` | One-shot Python (`-I`) or local Node.js; print results; same backend/timeout as terminal |
+| `terminal` | Explicit argv, optional workspace-relative `cwd`, no implicit shell; bounded output; timeout kills process group |
+| `execute_code` | One-shot Python (`-I`) or local Node.js; optional `cwd`; same backend/timeout as terminal |
 | `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `list_files_page` | Paginated directory names with listing digest checks; directories end in `/` |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
 | `edit_file` | Preserve UTF-8 text and line endings; reject overlapping/ambiguous matches; optional snapshot digest |
+
+Both execution tools accept `cwd`, an existing directory relative to the configured
+workspace, defaulting to `"."`. For example, `terminal` can receive
+`{"command":["python","-m","pytest","-q"],"cwd":"packages/demo"}`, and
+`execute_code` can receive
+`{"code":"from pathlib import Path; print(Path('notes.txt').read_text())","cwd":"research"}`.
+Use these tool arguments in the assistant, or the same registered `Tool.invoke`
+JSON interface in an embedded app.
+
+The selected directory applies only to that invocation; later calls default to
+the workspace root. It does not change the host process's working directory, so
+concurrent calls can use different subdirectories. Absolute paths, missing or
+non-directory paths, and paths resolving outside the workspace are rejected before
+launch. Internal directory symlinks resolve to their target inside the workspace.
+In Docker the selected directory maps under `/workspace`, while the complete
+workspace mount remains read-only. Directory validation sets the starting location;
+it does not confine local commands' filesystem access or lock directories against
+concurrent filesystem changes. Existing local/Docker permissions still apply.
 
 `terminal` and `execute_code` return `exit_code`, `output`, `output_bytes` and
 `truncated`. Output combines stdout/stderr and retains the tail of at most 20,000

@@ -195,6 +195,13 @@ Server commands run under the host user. The bridge does not pass EvoMesh API ke
 
 `terminal="local"` enables bounded argv execution in the workspace with filtered environment variables. It is full host-user execution, not a sandbox. `terminal="docker"` runs in `python:3.12-slim` with no network, nonroot identity, resource limits and a read-only workspace mount. Pre-pull the image; provide a running Docker engine. The container can read mounted files but cannot modify them; the normal file tools remain the writing interface.
 
+Both `terminal` and `execute_code` accept an optional workspace-relative `cwd` in
+their invocation arguments. It must resolve to an existing directory inside the
+workspace; it applies to that call only. For example,
+`app.tools["execute_code"].invoke('{"code":"print(42)","cwd":"scripts"}')` runs in an
+existing `scripts` subdirectory. Docker maps it under `/workspace` and keeps the
+complete workspace read-only. This does not change the host process's working directory.
+
 `allowed_hosts=["example.com"]` enables `read_web` for exact configured HTTPS hosts. It limits response size, rejects redirects and private-address preflight checks, and extracts text. It is not a search engine or an interactive browser. Use a network egress policy for hostile URLs or DNS; no strong SSRF sandbox is claimed.
 
 `read_web(url, offset=0, limit=12000, expected_sha256=...)` returns `text`,

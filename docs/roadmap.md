@@ -96,3 +96,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] JSON-safe browser snapshots with explicit clipping evidence and selector-scoped recovery
 - [x] Check pinned Git blob sizes before source reads; enforce the same per-file bound at proposal and integration gates
 - [x] Paginated literal source search at the pinned review revision, with read offsets and inspection-gated evidence
+- [x] Per-call workspace-relative execution directories for Terminal and execute_code, including read-only Docker mapping

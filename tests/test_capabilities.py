@@ -169,6 +169,30 @@ def test_docker_terminal_has_readonly_workspace_and_nonroot_user(tmp_path):
     )
     assert result["exit_code"] != 0
     assert not (tmp_path / "new.txt").exists()
+    # Selecting a directory changes the container workdir, while the complete
+    # workspace stays mounted read-only at the same location.
+    nested = tmp_path / "nested data"
+    nested.mkdir(mode=0o755)
+    (nested / "note.txt").write_text("nested-fixture")
+    code = (
+        "from pathlib import Path; "
+        "assert str(Path.cwd()) == '/workspace/nested data'; "
+        "assert Path('note.txt').read_text() == 'nested-fixture'; "
+        "assert Path('../note.txt').read_text() == 'fixture'; "
+        "\ntry: Path('new.txt').write_text('bad')\n"
+        "except OSError: print('readonly')\n"
+        "else: raise AssertionError('Workspace became writable')"
+    )
+    for kind in ("terminal", "execute_code"):
+        tool = (
+            terminal_tool(tmp_path, backend="docker")
+            if kind == "terminal"
+            else execute_code_tool(tmp_path, backend="docker")
+        )
+        arguments = {"command": ["python", "-c", code]} if kind == "terminal" else {"code": code}
+        result = json.loads(tool.invoke(json.dumps({**arguments, "cwd": "nested data"})))
+        assert result["exit_code"] == 0 and result["output"] == "readonly\n"
+    assert not (nested / "new.txt").exists()
     # Docker multiplexes stdout/stderr separately; assert ordering within each
     # stream rather than assuming their arrival order matches child write order.
     for descriptor in (1, 2):

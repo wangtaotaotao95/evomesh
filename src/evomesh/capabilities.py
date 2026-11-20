@@ -58,9 +58,14 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
     root = workspace.resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    def run(command: list[str]) -> dict:
+    def run(command: list[str], cwd: str = ".") -> dict:
         if not command or any(not item or "\0" in item for item in command):
             raise ValueError("Expected non-empty command argv")
+        if not isinstance(cwd, str) or not cwd or "\0" in cwd or Path(cwd).is_absolute():
+            raise ValueError("cwd must be a relative workspace directory")
+        directory = (root / cwd).resolve()
+        if not directory.is_relative_to(root) or not directory.is_dir():
+            raise ValueError("cwd must resolve to an existing directory inside the workspace")
         argv, container = command, "evomesh-tool-" + uuid.uuid4().hex
         if backend == "docker":
             argv = [
@@ -78,7 +83,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                 "--cpus=1",
                 "--user=65534:65534",
                 "--tmpfs=/tmp:rw,nosuid,size=64m",
-                "--workdir=/workspace",
+                "--workdir=" + (Path("/workspace") / directory.relative_to(root)).as_posix(),
                 "--mount",
                 f"type=bind,src={root},dst=/workspace,readonly",
                 "python:3.12-slim",
@@ -94,7 +99,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                         env[key] = os.environ[key]
             process = subprocess.Popen(
                 argv,
-                cwd=root,
+                cwd=directory,
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -130,7 +135,9 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
     return Tool(
         "terminal",
         "Run one-shot command argv; its process group is cleaned up on return. "
-        "No implicit shell. Returns exit_code, output tail, total "
+        "No implicit shell. Optional cwd selects an existing workspace-relative directory "
+        "for this call only (default '.'); absolute paths and symlink escapes are rejected. "
+        "Returns exit_code, output tail, total "
         "output_bytes and truncated. Timeouts return partial diagnostic feedback, not success; "
         "inspect earlier effects before retrying. If truncated, narrow command output. "
         + (
@@ -145,8 +152,10 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                     "minItems": 1,
                     "maxItems": 100,
                     "items": {"type": "string"},
-                }
-            }
+                },
+                "cwd": {"type": "string", "minLength": 1, "maxLength": 1000},
+            },
+            ["command"],
         ),
         run,
         source_paths=("src/evomesh/capabilities.py", "src/evomesh/processes.py"),
@@ -160,14 +169,14 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
     """One-shot Python/JavaScript execution using the terminal's isolation contract."""
     terminal = terminal_tool(workspace, backend, timeout)
 
-    def execute(code: str, language: str = "python") -> dict:
+    def execute(code: str, language: str = "python", cwd: str = ".") -> dict:
         if language == "python":
             argv = [sys.executable if backend == "local" else "python", "-I", "-c", code]
         elif language == "javascript" and backend == "local":
             argv = ["node", "-e", code]
         else:
             raise ValueError("Docker supports Python; local supports Python and installed Node.js")
-        return terminal.handler(argv)
+        return terminal.handler(argv, cwd=cwd)
 
     return Tool(
         "execute_code",
@@ -176,11 +185,14 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
         "if truncated. Timeouts provide partial diagnostic feedback; inspect earlier effects "
         "before retrying. "
         "No persistent kernel or access to agent credentials. Same permissions as terminal. "
+        "Optional cwd selects an existing workspace-relative directory for this call only "
+        "(default '.'); absolute paths and symlink escapes are rejected. "
         "Docker supports Python only; local JavaScript requires Node.js.",
         object_schema(
             {
                 "code": {"type": "string", "minLength": 1, "maxLength": 50000},
                 "language": {"type": "string", "enum": ["python", "javascript"]},
+                "cwd": {"type": "string", "minLength": 1, "maxLength": 1000},
             },
             ["code"],
         ),
