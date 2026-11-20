@@ -50,7 +50,15 @@ CATALOG = {
     "evaluation": ("Behavioral evaluation and regression gates", ["evaluation.py"]),
     "evolution": (
         "Evidence, reflection and versioned integration",
-        ["learning.py", "evolution.py", "proactive.py", "store.py", "cli.py", "processes.py"],
+        [
+            "learning.py",
+            "evolution.py",
+            "proactive.py",
+            "store.py",
+            "cli.py",
+            "processes.py",
+            "source_search.py",
+        ],
     ),
 }
 

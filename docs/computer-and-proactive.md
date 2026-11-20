@@ -343,6 +343,28 @@ existing source-file eligibility checks. Narrow prefixes to conserve model steps
 pagination removes the inaccessible suffix, but does not make an arbitrarily
 large repository cheap to enumerate or review.
 
+`search_source(query, prefix="", offset=0, line_offset=0, limit=50)` locates literal,
+case-sensitive text in the same pinned revision. It returns one match per matching
+line, with the path, one-based line/column, a match-centered preview of up to 500
+characters, and a zero-based character `offset` usable with `read_source`. The
+query is limited to 500 characters; regex and multiline matching are not supported.
+Prefixes are literal, as for `list_source`.
+
+Each call examines at most 50 catalog entries and returns at most `limit` matches
+(1–100) within an 18,000-character JSON budget including escaping. If `next_cursor`
+is not null, pass its `offset` and `line_offset` with the **same query and prefix**.
+Continue even after an empty match page: later files can still match. Cursors count
+paths and lines, not matches, and are valid only within this reflection cycle.
+Private metadata paths, nonregular files, files over 100,000 bytes, binary and
+invalid UTF-8 sources are skipped; `skipped_files` and `scanned_files` describe
+this page only. A resumed file can be counted again. These are bounded scans,
+not a search index; repository catalog enumeration still happens once per cycle.
+
+Search snippets do not mark a file as inspected. Use `read_source` on relevant
+matches before `record_finding` or exact-edit proposals. This keeps source discovery
+connected to the existing evidence and validation gates without treating a partial
+search preview as a complete review. Lease guards are checked between scanned files.
+
 `read_source` returns character-based pages with `offset`, `total_chars` and
 `next_offset`; follow `next_offset` until null to read a complete file. Responses
 include JSON escaping in their size budget, so large or escape-heavy files remain

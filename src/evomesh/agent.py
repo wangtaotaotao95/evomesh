@@ -360,7 +360,7 @@ class Agent:
                     raise ValueError("Review snapshot metadata exceeds context budget")
                 preview //= 2
 
-        def list_source(prefix: str = "", offset: int = 0, limit: int = 100) -> dict:
+        def matching_source_paths(prefix: str) -> list[str]:
             nonlocal source_paths
             if source_paths is None:
                 # NUL records preserve Unicode, tabs and newlines without Git's
@@ -371,7 +371,10 @@ class Agent:
                     for entry in git(repo, "ls-tree", "-r", "-z", base).split("\0")
                     if entry
                 ]
-            paths = [path for path in source_paths if path.startswith(prefix)]
+            return [path for path in source_paths if path.startswith(prefix)]
+
+        def list_source(prefix: str = "", offset: int = 0, limit: int = 100) -> dict:
+            paths = matching_source_paths(prefix)
             if type(offset) is not int or not 0 <= offset <= len(paths):
                 raise ValueError("Offset must be within the matching source paths")
             if type(limit) is not int or not 1 <= limit <= 200:
@@ -390,6 +393,22 @@ class Agent:
                 if end - offset <= 1:
                     raise ValueError("Source path metadata exceeds output budget")
                 end = offset + (end - offset) // 2
+
+        def search_source(
+            query: str, prefix: str = "", offset: int = 0, line_offset: int = 0, limit: int = 50
+        ) -> dict:
+            from .source_search import search_source_page
+
+            return search_source_page(
+                repo,
+                base,
+                matching_source_paths(prefix),
+                query,
+                offset=offset,
+                line_offset=line_offset,
+                limit=limit,
+                guard=guard,
+            )
 
         def read_source(path: str, offset: int = 0, limit: int = 12000) -> dict:
             content = source_file(repo, base, path)
@@ -501,6 +520,33 @@ class Agent:
                 ),
                 list_source,
                 source_paths=("src/evomesh/agent.py", "src/evomesh/evolution.py"),
+                capability="evolution",
+            ),
+            Tool(
+                "search_source",
+                "Search literal, case-sensitive text at the pinned base commit. Optional prefix "
+                "filters repository paths literally. Scans at most 50 paths per call; follow "
+                "next_cursor's offset/line_offset with the SAME query/prefix until null, even "
+                "after empty pages. Skips private paths, nonregular, binary, invalid UTF-8 and "
+                "oversized files. Returns one preview per matching line. Use each match's path "
+                "and character offset with read_source before recording findings or exact edits; "
+                "search snippets alone do not count as inspection.",
+                object_schema(
+                    {
+                        "query": {"type": "string", "minLength": 1, "maxLength": 500},
+                        "prefix": {"type": "string", "maxLength": 1000},
+                        "offset": {"type": "integer", "minimum": 0},
+                        "line_offset": {"type": "integer", "minimum": 0},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                    },
+                    ["query"],
+                ),
+                search_source,
+                source_paths=(
+                    "src/evomesh/agent.py",
+                    "src/evomesh/evolution.py",
+                    "src/evomesh/source_search.py",
+                ),
                 capability="evolution",
             ),
             Tool(
@@ -616,7 +662,9 @@ You only submit proposals; a separate worker validates and integrates them."""
             "a truncated page. Prefer exact edits for localized changes: include enough old "
             "context for a unique match, preserving all other source automatically. "
             "Use list_source prefixes to focus repository discovery; its paginated paths "
-            "and read_source both refer to the pinned base commit. "
+            "and read_source both refer to the pinned base commit. Use search_source to locate "
+            "literal text across sources, following next_cursor even after empty pages. "
+            "Inspect matching files with read_source before recording findings or exact edits. "
             "If the available budget is insufficient, explain the remaining "
             "work without inventing a proposal."
             " Evidence and proposal summaries contain bounded previews, not full records. "

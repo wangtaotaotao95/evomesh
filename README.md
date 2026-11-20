@@ -83,7 +83,7 @@ Secrets stay in environment variables. The CLI discovers `evomesh.toml`, or use 
 | Browser | Opt-in Chromium: open, snapshot, click, fill, press, select, wait, back, screenshot | `BrowserSession`, per-run lifecycle, native forms and bounded condition waits |
 | Code execution | `execute_code`: Python / local Node.js | `execute_code_tool`, local/Docker backend |
 | File discovery/read/search/edit | `list_files_page`, `read_file_chunk`, `search_files`, `edit_file` | Bounded pages with digest checks, exact-match editing and file/line evidence |
-| Proactive evolution | Idle reviews or dedicated `evolution-worker` on a shared interval | `app.evolve_once()`, `ProactiveEvolution.run`, SQL leases, optional integration checks |
+| Proactive evolution | Idle reviews or dedicated `evolution-worker`; pinned source search and inspection | `app.evolve_once()`, `ProactiveEvolution.run`, SQL leases, optional integration checks |
 | Public web reading | Explicit HTTPS host allowlist; paginated text with snapshot checks | `web_tool`; JSON-safe pages, HTML extraction, plain text/JSON preservation |
 | MCP tools | Configured trusted stdio servers | Persistent `MCPConnection`, namespaced `Tool` objects |
 | Custom integrations | Trusted plugin modules | `@tool`, `app.register`, replaceable `Model` |

@@ -95,3 +95,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Reject invalid execution deadlines and evolution leases before work; clean up invalid capture calls
 - [x] JSON-safe browser snapshots with explicit clipping evidence and selector-scoped recovery
 - [x] Check pinned Git blob sizes before source reads; enforce the same per-file bound at proposal and integration gates
+- [x] Paginated literal source search at the pinned review revision, with read offsets and inspection-gated evidence
