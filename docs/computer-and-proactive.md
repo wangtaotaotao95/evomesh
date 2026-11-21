@@ -93,6 +93,24 @@ workspace mount remains read-only. Directory validation sets the starting locati
 it does not confine local commands' filesystem access or lock directories against
 concurrent filesystem changes. Existing local/Docker permissions still apply.
 
+Both tools also accept optional `stdin` text, sent as UTF-8 without an added newline.
+For example, `execute_code` can receive
+`{"code":"import json,sys; print(sum(json.load(sys.stdin)))","stdin":"[1,2,3]"}`.
+Input is limited to 50,000 characters and 100,000 encoded bytes, checked before
+launch. It travels through a pipe, not a shell expression, command argument or
+temporary input file. Input and output progress concurrently under the existing
+deadline, so a program can emit output before reading a large input without the
+parent blocking on a full input pipe.
+
+The writer closes after sending input to deliver EOF. Omitting `stdin` gives
+immediate EOF instead of inheriting the assistant/server's input. A program may
+close its input early; its exit code still determines success, and delivery does
+not prove that it consumed or processed every byte. This is one-shot input, not
+an interactive terminal or persistent session. Docker uses stdin attachment without
+a TTY; its read-only mount and other restrictions remain in effect. Input and
+echoed output can appear in private conversation history; shared evolution error
+records contain capability/source metadata rather than the supplied input.
+
 `terminal` and `execute_code` return `exit_code`, `output`, `output_bytes` and
 `truncated`. Output combines stdout/stderr and retains the tail of at most 20,000
 bytes, shortened further as needed to keep the complete JSON response within

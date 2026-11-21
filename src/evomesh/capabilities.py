@@ -58,9 +58,14 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
     root = workspace.resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    def run(command: list[str], cwd: str = ".") -> dict:
+    def run(command: list[str], cwd: str = ".", stdin: str = "") -> dict:
         if not command or any(not item or "\0" in item for item in command):
             raise ValueError("Expected non-empty command argv")
+        if not isinstance(stdin, str) or len(stdin) > 50000:
+            raise ValueError("stdin must be text up to 50,000 characters")
+        input_data = stdin.encode("utf-8")
+        if len(input_data) > 100_000:
+            raise ValueError("stdin exceeds 100 KB of UTF-8 data")
         if not isinstance(cwd, str) or not cwd or "\0" in cwd or Path(cwd).is_absolute():
             raise ValueError("cwd must be a relative workspace directory")
         directory = (root / cwd).resolve()
@@ -71,6 +76,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
             argv = [
                 "docker",
                 "run",
+                "-i",
                 "--rm",
                 "--name",
                 container,
@@ -101,12 +107,13 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                 argv,
                 cwd=directory,
                 env=env,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
             try:
-                code, tail, size = capture_output(process, timeout)
+                code, tail, size = capture_output(process, timeout, input_data=input_data)
                 content = tail.decode(errors="replace")
             except CaptureTimeout as exc:
                 raise ExecutionTimeout(exc) from None
@@ -137,6 +144,8 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
         "Run one-shot command argv; its process group is cleaned up on return. "
         "No implicit shell. Optional cwd selects an existing workspace-relative directory "
         "for this call only (default '.'); absolute paths and symlink escapes are rejected. "
+        "Optional stdin is UTF-8 text (up to 50,000 characters/100 KB), followed by EOF; "
+        "omitting it gives immediate EOF. No interactive input. "
         "Returns exit_code, output tail, total "
         "output_bytes and truncated. Timeouts return partial diagnostic feedback, not success; "
         "inspect earlier effects before retrying. If truncated, narrow command output. "
@@ -154,6 +163,7 @@ def terminal_tool(workspace: Path, backend: str = "local", timeout: float = 30) 
                     "items": {"type": "string"},
                 },
                 "cwd": {"type": "string", "minLength": 1, "maxLength": 1000},
+                "stdin": {"type": "string", "maxLength": 50000},
             },
             ["command"],
         ),
@@ -169,14 +179,14 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
     """One-shot Python/JavaScript execution using the terminal's isolation contract."""
     terminal = terminal_tool(workspace, backend, timeout)
 
-    def execute(code: str, language: str = "python", cwd: str = ".") -> dict:
+    def execute(code: str, language: str = "python", cwd: str = ".", stdin: str = "") -> dict:
         if language == "python":
             argv = [sys.executable if backend == "local" else "python", "-I", "-c", code]
         elif language == "javascript" and backend == "local":
             argv = ["node", "-e", code]
         else:
             raise ValueError("Docker supports Python; local supports Python and installed Node.js")
-        return terminal.handler(argv, cwd=cwd)
+        return terminal.handler(argv, cwd=cwd, stdin=stdin)
 
     return Tool(
         "execute_code",
@@ -187,12 +197,15 @@ def execute_code_tool(workspace: Path, backend: str = "local", timeout: float = 
         "No persistent kernel or access to agent credentials. Same permissions as terminal. "
         "Optional cwd selects an existing workspace-relative directory for this call only "
         "(default '.'); absolute paths and symlink escapes are rejected. "
+        "Optional stdin is UTF-8 text (up to 50,000 characters/100 KB), followed by EOF; "
+        "omitting it gives immediate EOF. No interactive input. "
         "Docker supports Python only; local JavaScript requires Node.js.",
         object_schema(
             {
                 "code": {"type": "string", "minLength": 1, "maxLength": 50000},
                 "language": {"type": "string", "enum": ["python", "javascript"]},
                 "cwd": {"type": "string", "minLength": 1, "maxLength": 1000},
+                "stdin": {"type": "string", "maxLength": 50000},
             },
             ["code"],
         ),

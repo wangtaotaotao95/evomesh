@@ -38,6 +38,7 @@ def capture_output(
     *,
     tail_bytes: int = 20000,
     guard: Callable[[], None] | None = None,
+    input_data: bytes | None = None,
 ) -> tuple[int, bytes, int]:
     """Drain output without a spool; guard failures terminate this command group.
 
@@ -45,6 +46,8 @@ def capture_output(
     run between bounded reads/waits, including after EOF while the process lives.
     Deadlines raise CaptureTimeout with the tail and bytes captured before the
     deadline. Cleanup completes before the caller receives the exception.
+    Optional input_data requires stdin=PIPE; input is written concurrently with
+    output reads, then closed to signal EOF. An early reader close is allowed.
     """
     tail, size = b"", 0
 
@@ -61,10 +64,31 @@ def capture_output(
         deadline = time.monotonic() + timeout
         if type(tail_bytes) is not int or tail_bytes <= 0:
             raise ValueError("tail_bytes must be a positive integer")
+        if input_data is not None and (not isinstance(input_data, bytes) or process.stdin is None):
+            raise ValueError("input_data must be bytes with stdin=PIPE")
+        data, sent = memoryview(input_data or b""), 0
         with process.stdout, selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
+            if process.stdin is not None:
+                if data:
+                    os.set_blocking(process.stdin.fileno(), False)
+                    selector.register(process.stdin, selectors.EVENT_WRITE, "stdin")
+                else:
+                    process.stdin.close()
             while selector.get_map():
                 for key, _ in selector.select(remaining()):
+                    if key.data == "stdin":
+                        try:
+                            sent += os.write(key.fd, data[sent : sent + 65536])
+                        except BlockingIOError:
+                            continue
+                        except BrokenPipeError:
+                            # A command may finish without consuming all input.
+                            sent = len(data)
+                        if sent == len(data):
+                            selector.unregister(key.fd)
+                            process.stdin.close()
+                        continue
                     chunk = os.read(key.fd, 65536)
                     if not chunk:
                         selector.unregister(key.fd)
@@ -92,3 +116,5 @@ def capture_output(
         process.wait()
         if process.stdout is not None:
             process.stdout.close()
+        if process.stdin is not None:
+            process.stdin.close()

@@ -193,6 +193,21 @@ def test_docker_terminal_has_readonly_workspace_and_nonroot_user(tmp_path):
         result = json.loads(tool.invoke(json.dumps({**arguments, "cwd": "nested data"})))
         assert result["exit_code"] == 0 and result["output"] == "readonly\n"
     assert not (nested / "new.txt").exists()
+    for kind in ("terminal", "execute_code"):
+        tool = (
+            terminal_tool(tmp_path, backend="docker")
+            if kind == "terminal"
+            else execute_code_tool(tmp_path, backend="docker")
+        )
+        code = (
+            "import sys; sys.stdout.buffer.write(b'x' * 100000); sys.stdout.flush(); "
+            "data = sys.stdin.buffer.read(); print(len(data)); "
+            "assert data.decode('utf-8') == '你' * 30000"
+        )
+        arguments = {"command": ["python", "-c", code]} if kind == "terminal" else {"code": code}
+        result = json.loads(tool.invoke(json.dumps({**arguments, "stdin": "你" * 30000})))
+        assert result["exit_code"] == 0 and result["output"].endswith("90000\n")
+        assert result["truncated"]
     # Docker multiplexes stdout/stderr separately; assert ordering within each
     # stream rather than assuming their arrival order matches child write order.
     for descriptor in (1, 2):

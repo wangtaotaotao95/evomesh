@@ -202,6 +202,13 @@ workspace; it applies to that call only. For example,
 existing `scripts` subdirectory. Docker maps it under `/workspace` and keeps the
 complete workspace read-only. This does not change the host process's working directory.
 
+Their optional `stdin` argument sends UTF-8 text through a pipe and then EOF;
+omitting it gives immediate EOF. For example,
+`app.tools["execute_code"].invoke('{"code":"import sys; print(sys.stdin.read().upper())","stdin":"hello"}')`.
+Input is limited to 50,000 characters and 100,000 encoded bytes. Both tools drain
+output while writing input, using the existing timeout and cleanup behavior.
+This supports one-shot data processing, not interactive sessions.
+
 `allowed_hosts=["example.com"]` enables `read_web` for exact configured HTTPS hosts. It limits response size, rejects redirects and private-address preflight checks, and extracts text. It is not a search engine or an interactive browser. Use a network egress policy for hostile URLs or DNS; no strong SSRF sandbox is claimed.
 
 `read_web(url, offset=0, limit=12000, expected_sha256=...)` returns `text`,
