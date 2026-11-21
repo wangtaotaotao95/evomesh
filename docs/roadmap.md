@@ -98,3 +98,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Paginated literal source search at the pinned review revision, with read offsets and inspection-gated evidence
 - [x] Per-call workspace-relative execution directories for Terminal and execute_code, including read-only Docker mapping
 - [x] Bounded UTF-8 stdin for Terminal and execute_code with concurrent pipe I/O, EOF, timeout cleanup and private evolution evidence
+- [x] Idempotent browser checkbox state setting and native radio selection with bounded snapshots and source-linked failures

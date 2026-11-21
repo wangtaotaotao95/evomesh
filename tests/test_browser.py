@@ -20,6 +20,11 @@ from evomesh.browser import BrowserSession, browser_tool, check_url
         {"action": "select", "selector": "select", "values": "blue"},
         {"action": "select", "selector": "select", "labels": [1]},
         {"action": "select", "selector": "select", "values": ["blue"] * 101},
+        {"action": "check", "checked": True},
+        {"action": "check", "selector": "input"},
+        {"action": "check", "selector": "input", "checked": "false"},
+        {"action": "check", "selector": "input", "checked": 0},
+        {"action": "check", "selector": "input", "checked": []},
     ],
 )
 def test_form_arguments_rejected_before_browser_start(tmp_path, arguments):
@@ -27,6 +32,131 @@ def test_form_arguments_rejected_before_browser_start(tmp_path, arguments):
         with pytest.raises(ValueError):
             session.operate(**arguments)
         assert session.page is None and session.driver is None
+
+
+@pytest.mark.parametrize("checked", [True, False])
+def test_check_accepts_boolean_target_and_requires_open_page(tmp_path, checked):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        with pytest.raises(ValueError, match="Open a page first"):
+            session.operate("check", selector="#consent", checked=checked)
+        assert session.page is None and session.driver is None
+
+
+@pytest.fixture
+def checkbox_page(monkeypatch):
+    if os.getenv("EVOMESH_TEST_BROWSER") != "1":
+        pytest.skip("Enable EVOMESH_TEST_BROWSER after playwright install chromium")
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))]
+    )
+    original = BrowserSession._start
+
+    def start(self):
+        original(self)
+        self.context.route(
+            "https://example.com/**",
+            lambda route: route.fulfill(
+                content_type="text/html",
+                body="""<title>Native control fixture</title>
+                <label>Accept<input type="checkbox" id="accept"></label>
+                <label>Basic<input type="radio" name="plan" value="basic"
+                  id="basic" checked></label>
+                <label>Plus<input type="radio" name="plan" value="plus" id="plus"></label>
+                <label>Unavailable<input type="checkbox" id="PRIVATE_DISABLED" disabled></label>
+                <div id="plain">Not a checkbox</div><p id="result"></p>
+                <script>
+                let changes = 0;
+                function report() {
+                  document.querySelector('#result').textContent =
+                    'check=' + document.querySelector('#accept').checked + ';radio=' +
+                    document.querySelector('input[name=plan]:checked').value +
+                    ';changes=' + changes;
+                }
+                document.querySelectorAll('input').forEach(input => {
+                  input.addEventListener('change', () => {changes++; report();});
+                });
+                report();
+                </script>""",
+            ),
+        )
+
+    monkeypatch.setattr(BrowserSession, "_start", start)
+
+
+def test_chromium_check_sets_checkbox_and_radio_state_idempotently(tmp_path, checkbox_page):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        tool = browser_tool(lambda: session)
+        session.operate("open", url="https://example.com/")
+
+        def check(selector, checked):
+            raw = tool.invoke(
+                json.dumps({"action": "check", "selector": selector, "checked": checked})
+            )
+            assert len(raw) <= 18000
+            return json.loads(raw)
+
+        first = check("#accept", True)
+        assert "check=true;radio=basic;changes=1" in first["text"]
+        assert 'checkbox "Accept" [checked]' in first["snapshot"]
+        assert check("#accept", True) == first
+        cleared = check("#accept", False)
+        assert "check=false;radio=basic;changes=2" in cleared["text"]
+        assert check("#accept", False) == cleared
+        selected = check("#plus", True)
+        assert "check=false;radio=plus;changes=3" in selected["text"]
+        assert check("#plus", True) == selected
+        assert "radio=basic;changes=4" in check("#basic", True)["text"]
+
+
+@pytest.mark.parametrize(
+    "selector,error", [("#PRIVATE_DISABLED", "TimeoutError"), ("#plain", "Error")]
+)
+def test_chromium_check_failure_has_private_source_evidence(
+    store, project, tmp_path, checkbox_page, selector, error
+):
+    class Model:
+        def complete(self, messages, tools):
+            if messages[-1]["role"] == "tool":
+                assert json.loads(messages[-1]["content"])["error"] == error
+                return {"role": "assistant", "content": "Control could not be checked"}
+            schema = next(
+                t["function"]["parameters"] for t in tools if t["function"]["name"] == "browser"
+            )
+            assert "check" in schema["properties"]["action"]["enum"]
+            assert schema["properties"]["checked"] == {"type": "boolean"}
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "check",
+                        "type": "function",
+                        "function": {
+                            "name": "browser",
+                            "arguments": json.dumps(
+                                {"action": "check", "selector": selector, "checked": True}
+                            ),
+                        },
+                    }
+                ],
+            }
+
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        session.operate("open", url="https://example.com/")
+        session.executor.submit(session.context.set_default_timeout, 200).result()
+        with AgentApp(
+            Config(project=project, workspace=tmp_path), store=store, model=Model()
+        ) as app:
+            app.register(browser_tool(lambda: session))
+            assert app.run("Synthetic checkbox task") == "Control could not be checked"
+            assert app.last_run_metrics["tool_errors"] == 1
+        assert "check=false;radio=basic;changes=0" in session.operate("snapshot")["text"]
+    rows = store.observations(project)
+    assert len(rows) == 1 and rows[0]["kind"] == "tool_error"
+    detail = json.loads(rows[0]["detail"])
+    assert detail["capability"] == "browser" and detail["source_paths"] == [
+        "src/evomesh/browser.py"
+    ]
+    assert selector not in rows[0]["detail"] and "Native control fixture" not in rows[0]["detail"]
 
 
 def test_form_tool_schema_and_private_failure_evidence(store, project, tmp_path):

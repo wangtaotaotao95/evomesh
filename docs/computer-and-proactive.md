@@ -69,7 +69,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 |---|---|
 | `terminal` | Explicit argv, optional workspace-relative `cwd`, no implicit shell; bounded output; timeout kills process group |
 | `execute_code` | One-shot Python (`-I`) or local Node.js; optional `cwd`; same backend/timeout as terminal |
-| `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
+| `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `check`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `list_files_page` | Paginated directory names with listing digest checks; directories end in `/` |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
@@ -315,6 +315,27 @@ tool policy hooks. Framework callers use the same operations, for example
 `session.operate("press", selector="#query", key="Enter")`. No new configuration
 is needed when browser tools are enabled. Failures retain browser source provenance
 in the evolution ledger without copying selectors, input or option contents.
+
+Use `check` with a CSS `selector` and explicit boolean `checked` to set a native
+checkbox's desired state. For example:
+
+```json
+{"action": "check", "selector": "#accept", "checked": true}
+```
+
+Set `checked` to `false` to clear a checkbox. An already satisfied state returns
+without clicking again, so repeating a successful call does not toggle the control
+or re-fire its change event. Select a native radio button with `checked=true`; switch
+to another radio in the group rather than trying to clear the selected radio with
+`false`. Custom widgets should use their supported click/keyboard interactions.
+
+Framework callers use `session.operate("check", selector="#accept", checked=True)`.
+The operation uses the session timeout and normal browser actionability checks;
+it does not force clicks on disabled controls. Success returns a fresh bounded
+snapshot. Missing selectors or non-boolean target states fail before browser
+startup; unsupported elements and timeouts become source-linked tool errors without
+copying selectors or page text into shared evolution evidence. A state change can
+trigger page handlers or form submission; inspect the returned snapshot for results.
 
 For asynchronously updated pages, use `wait` with a CSS `selector` after the
 triggering action. `state` defaults to `visible`; `hidden` also accepts a removed

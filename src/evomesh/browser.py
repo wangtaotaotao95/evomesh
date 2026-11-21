@@ -121,11 +121,14 @@ class BrowserSession:
         values=None,
         labels=None,
         state=None,
+        checked=None,
     ):
         if action == "open":
             check_url(url or "", self.allowed_hosts)
-        if action in {"click", "fill", "press", "select", "wait"} and not selector:
+        if action in {"click", "fill", "press", "select", "wait", "check"} and not selector:
             raise ValueError("A CSS selector is required")
+        if action == "check" and type(checked) is not bool:
+            raise ValueError("checked must be a boolean target state")
         if action == "wait":
             state = "visible" if state is None else state
             if not isinstance(state, str) or state not in {
@@ -161,6 +164,8 @@ class BrowserSession:
             self.page.locator(selector).click()
         elif action == "fill":
             self.page.locator(selector).fill(text)
+        elif action == "check":
+            self.page.locator(selector).set_checked(checked)
         elif action == "press":
             self.page.locator(selector).press(key)
         elif action == "select":
@@ -196,11 +201,12 @@ class BrowserSession:
         values=None,
         labels=None,
         state=None,
+        checked=None,
     ):
         if self.closed:
             raise ValueError("Browser session is closed")
         return self.executor.submit(
-            self._operate, action, url, selector, text, key, values, labels, state
+            self._operate, action, url, selector, text, key, values, labels, state, checked
         ).result()
 
     def _close(self):
@@ -231,7 +237,10 @@ def browser_tool(session_factory) -> Tool:
     return Tool(
         "browser",
         "Use a fresh Chromium page, retained within this task only: open, snapshot, click, fill, "
-        "press, select, wait, back, screenshot. press needs selector and key (e.g. Enter, Tab). "
+        "press, select, check, wait, back, screenshot. "
+        "press needs selector and key (e.g. Enter, Tab). "
+        "check needs selector and checked (boolean): sets a native checkbox's desired state "
+        "without toggling it on repeated calls; checked=true can select a native radio button. "
         "select targets native HTML select controls using exactly one of values or labels "
         "(arrays; [] clears selection). wait needs selector and optional state: visible (default), "
         "hidden, attached or detached; waits up to the session timeout then returns a snapshot. "
@@ -252,6 +261,7 @@ def browser_tool(session_factory) -> Tool:
                         "fill",
                         "press",
                         "select",
+                        "check",
                         "wait",
                         "back",
                         "screenshot",
@@ -261,6 +271,7 @@ def browser_tool(session_factory) -> Tool:
                 "selector": {"type": "string"},
                 "text": {"type": "string"},
                 "state": {"enum": ["visible", "hidden", "attached", "detached"]},
+                "checked": {"type": "boolean"},
                 "key": {"type": "string", "minLength": 1, "maxLength": 100},
                 "values": {
                     "type": "array",
