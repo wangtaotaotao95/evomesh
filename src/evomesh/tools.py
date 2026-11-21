@@ -155,12 +155,37 @@ def workspace_tools(root: Path) -> list[Tool]:
             )
         return text_page(raw.decode("utf-8"), offset, limit, path=path, sha256=digest)
 
-    def write_file(path: str, content: str) -> str:
-        if len(content.encode()) > 100_000:
+    def write_file(
+        path: str,
+        content: str,
+        expected_sha256: str | None = None,
+        create_only: bool = False,
+    ) -> str:
+        raw = content.encode("utf-8")
+        if len(raw) > 100_000:
             raise ValueError("File exceeds 100 KB")
+        if b"\0" in raw:
+            raise ValueError("Expected UTF-8 text, not binary content")
+        if type(create_only) is not bool or (create_only and expected_sha256 is not None):
+            raise ValueError(
+                "create_only must be boolean and cannot be combined with expected_sha256"
+            )
         file = resolve(path)
+        if create_only and (root / path).is_symlink():
+            raise FileExistsError("Destination already exists")
+        if expected_sha256 is not None:
+            if (
+                not file.is_file()
+                or hashlib.sha256(read_bytes(path)).hexdigest() != expected_sha256
+            ):
+                raise FileVersionChanged("File changed or is missing; reread before writing")
+        if not create_only and file.exists() and not file.is_file():
+            raise ValueError("Expected a regular workspace file")
         file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_text(content, encoding="utf-8")
+        # Exclusive creation arbitrates competing creators at the filesystem.
+        # Digest comparison above is a preflight check, not a multi-writer lock.
+        with file.open("x" if create_only else "w", encoding="utf-8", newline="") as stream:
+            stream.write(content)
         return "Saved " + path
 
     def list_files(path: str) -> list[str]:
@@ -335,14 +360,22 @@ def workspace_tools(root: Path) -> list[Tool]:
         ),
         Tool(
             "write_file",
-            "Write a UTF-8 file in your workspace.",
+            "Write UTF-8 text up to 100 KB in your workspace. By default creates or overwrites. "
+            "Use create_only=true to fail with FileExistsError if the destination exists. "
+            "For replacements, optionally pass expected_sha256 from read_file_chunk; "
+            "FileVersionChanged means reread before writing. These options are mutually "
+            "exclusive. The digest check is not an atomic multi-writer lock.",
             object_schema(
                 {
                     "path": {"type": "string"},
                     "content": {"type": "string"},
-                }
+                    "expected_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                    "create_only": {"type": "boolean"},
+                },
+                ["path", "content"],
             ),
             write_file,
+            source_paths=("src/evomesh/tools.py",),
         ),
         Tool(
             "list_files",

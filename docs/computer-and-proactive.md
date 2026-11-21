@@ -194,6 +194,36 @@ escaping within an 18,000-character output budget. UTF-8 files remain limited to
 100 KB; binary content, workspace escapes and private metadata paths are rejected.
 The existing `read_file` still returns plain text for small files.
 
+`write_file` creates or replaces workspace UTF-8 text, up to 100,000 encoded bytes.
+Use `create_only=true` for a new artifact that must not overwrite an existing
+destination:
+
+```json
+{"path":"reports/result.txt","content":"Synthetic result\n","create_only":true}
+```
+
+It uses exclusive filesystem creation: competing creators at the same resolved
+destination have one winner, and an existing destination raises `FileExistsError`.
+Existing final symlinks, including dangling ones, are also rejected in this mode.
+For a full-file replacement, pass `expected_sha256` from `read_file_chunk` instead.
+A changed or missing file raises `FileVersionChanged`; reread before deciding on
+a new replacement. The hash compares original bytes, including BOM and line endings.
+`create_only` and `expected_sha256` cannot be combined. Without either option,
+the existing create-or-overwrite behavior remains available.
+
+Write content containing NUL is rejected before opening the file. Existing
+nonregular destinations, such as directories and FIFOs, are rejected before an
+overwrite attempt. These checks also cover writes made by `edit_file`. Guards
+do not make full writes transactional: the hash check is not an atomic compare-and-swap,
+and concurrent filesystem changes after validation are not locked out. Exclusive
+creation protects the creation step, not subsequent writes by other processes or
+partial file contents after a write failure. SQL coordinates tasks/evolution;
+it does not turn workspace files into shared database records.
+
+The assistant and embedded apps use the same default `write_file` tool. Its failures
+now carry `src/evomesh/tools.py` provenance into shared evolution evidence without
+copying paths or replacement content into error observations.
+
 `search_files` accepts a file or directory `path`, an optional `offset` (number of
 matching lines to skip) and `limit` (1–100 results, default 100). Results retain
 the existing `matches` and `truncated` fields, adding `next_offset`,
