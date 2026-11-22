@@ -99,8 +99,8 @@ copies the output. Predicates should be deterministic and must not raise.
 
 `app.last_run_metrics` is context-local; `app.learning.list()` and `/runs` expose the latest 100 owner runs. Metrics include inference/tool attempts, model/tool errors, tool output truncations, elapsed duration, context compactions, maximum input characters, configured limits, framework version, configured repo revision and observation IDs. They do not contain task prompts, answers or arguments. The configured repo revision is not a guarantee that installed dependency code equals that commit. Persistence failures log a generic warning and do not make an already-executed action retryable. These are counts/timings, not provider token usage or cost accounting.
 
-`model_errors` counts exceptions raised by `Model.complete`, including HTTP,
-transport and response-decoding failures from the built-in adapter. Each emits a
+`model_errors` counts exceptions raised by `Model.complete` or reply validation,
+including HTTP, transport and response-decoding failures from the built-in adapter. Each emits a
 distinct `model_error` observation with capability `models`, the adapter catalog's
 `src/evomesh/models.py` source hint, exception type and zero-based model step.
 The observation is recorded even when earlier tool/context friction exists, and
@@ -114,6 +114,16 @@ saved. `RunCancelled` remains cancellation rather than a model error; context
 budget failures before inference remain context observations. These counts measure
 interface failures, not answer quality or correctness. Older persisted runs may
 lack `model_errors`; consumers can default that field to zero.
+
+Before executing any tools in a model reply, the loop validates the entire
+assistant message and every tool-call envelope. A malformed later call or duplicate
+call ID fails with `InvalidModelResponse` before an earlier call in that reply can
+write a file or save an evolution proposal. This applies to custom models and
+proactive reflection, and records the same private `model_error` evidence.
+Unknown tool names, invalid argument JSON and schema violations still produce
+normal tool feedback for the model to correct. This is protocol validation, not a
+transaction: it does not undo earlier steps or tool effects in structurally valid
+batches. No automatic inference retry or tool replay is added.
 
 Reflection submissions include real observation IDs and atomically store proposal/evidence rows. Evidence must exist in the same project. Manual `submit(..., observation_ids=[...])` can also supply links; legacy manual proposals without evidence remain supported. Deduplication retains the first proposal and its original evidence set. Linking an observation demonstrates provenance, not that the proposed patch fixes it.
 

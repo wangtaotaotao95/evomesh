@@ -33,7 +33,7 @@ with AgentApp.from_config("evomesh.toml", tools=[count_words]) as app:
 
 ## Replace any layer
 
-- **Model:** pass `model=your_adapter` or `model_factory=lambda: YourAdapter(...)`. Implement `complete(messages, tools) -> assistant_message`. A shared model instance must be thread-safe if used concurrently.
+- **Model:** pass `model=your_adapter` or `model_factory=lambda: YourAdapter(...)`. Implement `complete(messages, tools) -> assistant_message`. Return a dict with `role="assistant"`; optional `content` and `reasoning_content` must be strings or null. Optional `tool_calls` must be a list or null; each call requires a nonempty string `id` unique within the reply, and a `function` dict with a nonempty string `name` and string `arguments`. An omitted call `type` is treated as a function for compatibility; when present it must equal `"function"`. The full reply is validated before any of its tools execute; malformed replies raise `evomesh.models.InvalidModelResponse` and record model-failure evidence. Argument JSON and tool schemas are checked during tool execution, preserving corrective feedback. A shared model instance must be thread-safe if used concurrently.
 - **Tools:** pass tools, call `app.register(tool)`, or configure trusted `plugin_modules`. Each module exports `register(app)`.
 - **Memory/conversation/task storage:** `app.state` uses the SQLAlchemy engine from `app.store`. Choose SQLite/MySQL through `Config.database_url`, or supply an existing `Store`.
 - **Runtime behavior:** use `Agent` directly or subclass `AgentApp.agent()` to install a custom loop. Both loop and factory are ordinary evolvable Python source.

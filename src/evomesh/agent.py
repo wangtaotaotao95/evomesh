@@ -11,7 +11,7 @@ from pathlib import Path
 from .context import ContextBudgetExceeded, fit_context
 from .evolution import git, make_change, make_edit_change, revision, source_file, submit
 from .learning import capability_catalog, friction_detail
-from .models import Model
+from .models import Model, validate_message
 from .store import Store
 from .tools import Tool, ToolFeedbackError, object_schema, text_page
 
@@ -135,7 +135,7 @@ class Agent:
                         self.observe("context_pressure", friction_detail("context", facts=budget))
                 self.metrics["model_calls"] += 1
                 try:
-                    message = self.model.complete(inference, schemas)
+                    message = validate_message(self.model.complete(inference, schemas))
                 except RunCancelled:
                     raise
                 except Exception as exc:
