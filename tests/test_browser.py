@@ -600,3 +600,126 @@ def test_chromium_scoped_snapshot_recovers_large_page_and_records_private_eviden
     assert detail["source_paths"] == ["src/evomesh/browser.py"]
     assert detail["output_chars"] <= 18000
     assert "PRIVATE_TARGET" not in rows[0]["detail"] and "example.com" not in rows[0]["detail"]
+
+
+@pytest.mark.parametrize("selector", [None, ""])
+def test_hover_requires_selector_before_start(tmp_path, selector):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        with pytest.raises(ValueError, match="selector"):
+            session.operate("hover", selector=selector)
+        assert session.page is None and session.driver is None
+
+
+def test_hover_requires_open_page(tmp_path):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        with pytest.raises(ValueError, match="Open a page first"):
+            session.operate("hover", selector="#menu")
+        assert session.page is None and session.driver is None
+
+
+@pytest.fixture
+def hover_page(monkeypatch):
+    if os.getenv("EVOMESH_TEST_BROWSER") != "1":
+        pytest.skip("Enable EVOMESH_TEST_BROWSER after playwright install chromium")
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *a, **kw: [(0, 0, 0, "", ("93.184.216.34", 443))]
+    )
+    original = BrowserSession._start
+
+    def start(self):
+        original(self)
+        self.context.route(
+            "https://example.com/**",
+            lambda route: route.fulfill(
+                content_type="text/html",
+                body="""<title>Hover fixture</title>
+                <style>
+                  #spacer {height: 1600px}
+                  #menu {width: 240px; padding: 20px}
+                  #submenu {display: none}
+                  #menu:hover #submenu {display: block}
+                  #blocked {position: relative; width: 200px; height: 80px}
+                  #cover {position: absolute; inset: 0; z-index: 1}
+                </style>
+                <div id="spacer"></div>
+                <div id="menu">
+                  <button id="trigger" onclick="document.querySelector('#clicked').textContent =
+                    'Trigger was clicked'">Options</button>
+                  <div id="submenu"><button id="details" onclick="document.querySelector(
+                    '#result').textContent = 'Details selected'">Show details</button></div>
+                </div>
+                <p id="clicked">No trigger click</p><p id="result">Idle</p>
+                <div id="blocked"><button id="PRIVATE_BLOCKED">Covered</button>
+                  <div id="cover">Cover</div></div>
+                <button class="duplicate">One</button><button class="duplicate">Two</button>
+                """,
+            ),
+        )
+
+    monkeypatch.setattr(BrowserSession, "_start", start)
+
+
+def test_chromium_hover_reveals_menu_without_clicking_and_supports_next_action(
+    tmp_path, hover_page
+):
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        tool = browser_tool(lambda: session)
+        opened = session.operate("open", url="https://example.com/")
+        assert "Show details" not in opened["snapshot"]
+        raw = tool.invoke(json.dumps({"action": "hover", "selector": "#trigger"}))
+        assert len(raw) <= 18000
+        result = json.loads(raw)
+        assert 'button "Show details"' in result["snapshot"]
+        assert "Show details" in result["text"]
+        assert "No trigger click" in result["text"] and "Idle" in result["text"]
+        assert session.executor.submit(lambda: session.page.evaluate("window.scrollY")).result() > 0
+        assert "Details selected" in session.operate("click", selector="#details")["text"]
+        # Moving away closes the CSS menu; a fresh snapshot reflects that state.
+        away = session.operate("hover", selector="#clicked")
+        assert "Show details" not in away["snapshot"] and "No trigger click" in away["text"]
+
+
+@pytest.mark.parametrize(
+    "selector,error_type", [("#PRIVATE_BLOCKED", "TimeoutError"), (".duplicate", "Error")]
+)
+def test_chromium_hover_failure_records_private_source_evidence(
+    tmp_path, store, project, hover_page, selector, error_type
+):
+    class Model:
+        def complete(self, messages, tools):
+            if messages[-1]["role"] == "tool":
+                assert json.loads(messages[-1]["content"])["error"] == error_type
+                assert "PRIVATE" not in messages[-1]["content"]
+                return {"role": "assistant", "content": "Inspect another target"}
+            schema = next(tool for tool in tools if tool["function"]["name"] == "browser")
+            assert "hover" in schema["function"]["parameters"]["properties"]["action"]["enum"]
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "hover",
+                        "type": "function",
+                        "function": {
+                            "name": "browser",
+                            "arguments": json.dumps({"action": "hover", "selector": selector}),
+                        },
+                    }
+                ],
+            }
+
+    with BrowserSession(tmp_path, ["example.com"]) as session:
+        session.operate("open", url="https://example.com/")
+        session.executor.submit(session.context.set_default_timeout, 200).result()
+        with AgentApp(
+            Config(project=project, workspace=tmp_path), store=store, model=Model()
+        ) as app:
+            app.register(browser_tool(lambda: session))
+            assert app.run("Synthetic hover task") == "Inspect another target"
+            assert app.last_run_metrics["tool_errors"] == 1
+        assert session.operate("snapshot")["title"] == "Hover fixture"
+    rows = store.observations(project)
+    assert len(rows) == 1 and rows[0]["kind"] == "tool_error"
+    detail = json.loads(rows[0]["detail"])
+    assert detail["capability"] == "browser" and detail["error"] == error_type
+    assert detail["source_paths"] == ["src/evomesh/browser.py"]
+    assert "PRIVATE" not in rows[0]["detail"] and "example.com" not in rows[0]["detail"]

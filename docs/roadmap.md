@@ -102,3 +102,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Exclusive new-file creation and snapshot-checked full writes, rejecting special destinations with private source-linked error evidence
 - [x] Distinct model-failure metrics and adapter-source evidence, retained alongside earlier tool/context friction during runs and reflection
 - [x] Validate complete assistant/tool-call envelopes before batch execution, preventing partial actions from malformed replies and recording model-source evolution evidence
+- [x] Selector-based browser hover for menus/tooltips, with fresh snapshots, normal actionability checks and private source-linked failure evidence

@@ -125,7 +125,10 @@ class BrowserSession:
     ):
         if action == "open":
             check_url(url or "", self.allowed_hosts)
-        if action in {"click", "fill", "press", "select", "wait", "check"} and not selector:
+        if (
+            action in {"click", "hover", "fill", "press", "select", "wait", "check"}
+            and not selector
+        ):
             raise ValueError("A CSS selector is required")
         if action == "check" and type(checked) is not bool:
             raise ValueError("checked must be a boolean target state")
@@ -162,6 +165,8 @@ class BrowserSession:
             self.page.goto(url, wait_until="domcontentloaded")
         elif action == "click":
             self.page.locator(selector).click()
+        elif action == "hover":
+            self.page.locator(selector).hover()
         elif action == "fill":
             self.page.locator(selector).fill(text)
         elif action == "check":
@@ -236,8 +241,10 @@ class BrowserSession:
 def browser_tool(session_factory) -> Tool:
     return Tool(
         "browser",
-        "Use a fresh Chromium page, retained within this task only: open, snapshot, click, fill, "
-        "press, select, check, wait, back, screenshot. "
+        "Use a fresh Chromium page, retained within this task only: open, snapshot, click, hover, "
+        "fill, press, select, check, wait, back, screenshot. "
+        "hover needs selector: move the pointer to reveal menus/tooltips without clicking; "
+        "inspect the returned snapshot before choosing the next action. "
         "press needs selector and key (e.g. Enter, Tab). "
         "check needs selector and checked (boolean): sets a native checkbox's desired state "
         "without toggling it on repeated calls; checked=true can select a native radio button. "
@@ -258,6 +265,7 @@ def browser_tool(session_factory) -> Tool:
                         "open",
                         "snapshot",
                         "click",
+                        "hover",
                         "fill",
                         "press",
                         "select",

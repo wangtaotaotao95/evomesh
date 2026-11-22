@@ -69,7 +69,7 @@ supervisor can report/restart it. `app.evolve_once()` remains the one-cycle API.
 |---|---|
 | `terminal` | Explicit argv, optional workspace-relative `cwd`, no implicit shell; bounded output; timeout kills process group |
 | `execute_code` | One-shot Python (`-I`) or local Node.js; optional `cwd`; same backend/timeout as terminal |
-| `browser` | `open`, `snapshot`, `click`, `fill`, `press`, `select`, `check`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
+| `browser` | `open`, `snapshot`, `click`, `hover`, `fill`, `press`, `select`, `check`, `wait`, `back`, `screenshot`; inspect snapshots to choose CSS selectors |
 | `list_files_page` | Paginated directory names with listing digest checks; directories end in `/` |
 | `read_file_chunk` | Bounded UTF-8 pages with character offsets and optional SHA-256 version checks |
 | `search_files` | Literal substring search in a file/directory, bounded pages with path/line citations; at most 1,000 files per call |
@@ -321,6 +321,23 @@ text, titles, selectors or URLs into the shared ledger.
 
 Browser navigation and subrequests must pass configured host, HTTPS and public-IP
 checks. Redirects are intercepted too; service workers and WebSockets are blocked.
+
+Use `hover` with a CSS `selector` to reveal pointer-driven menus or tooltips:
+
+```json
+{"action": "hover", "selector": "#options"}
+```
+
+Framework callers use `session.operate("hover", selector="#options")`. The target
+must resolve to one element; normal visibility, stability and hit-target checks
+apply, including scrolling into view when needed. Covered or missing targets time
+out rather than forcing the pointer through an overlay. The operation does not
+click, but page pointer handlers can still perform actions or request network data.
+Success returns a fresh bounded snapshot; inspect it before selecting a revealed
+item. Use `wait` for menus that load asynchronously. Moving the pointer elsewhere
+can close a hover menu. This does not add arbitrary coordinates, drag-and-drop or
+desktop pointer control. Failures use the existing browser source-linked SQL
+evidence without copying selectors, URLs or page contents into the shared ledger.
 
 Form controls support `press` with a CSS `selector` and `key` (for example `Enter`,
 `Tab`, `Backspace` or a Playwright key combination). `select` targets a native HTML
