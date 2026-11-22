@@ -95,6 +95,7 @@ class Agent:
         self.metrics = {
             "status": "failed",
             "model_calls": 0,
+            "model_errors": 0,
             "tool_calls": 0,
             "tool_errors": 0,
             "tool_output_truncations": 0,
@@ -133,7 +134,17 @@ class Agent:
                     if self.metrics["context_compactions"] == 1:
                         self.observe("context_pressure", friction_detail("context", facts=budget))
                 self.metrics["model_calls"] += 1
-                message = self.model.complete(inference, schemas)
+                try:
+                    message = self.model.complete(inference, schemas)
+                except RunCancelled:
+                    raise
+                except Exception as exc:
+                    self.metrics["model_errors"] += 1
+                    self.observe(
+                        "model_error",
+                        friction_detail("models", error=type(exc).__name__, facts={"step": step}),
+                    )
+                    raise
                 if self.cancelled():
                     raise RunCancelled("Run cancelled after inference")
                 calls = message.get("tool_calls") or []

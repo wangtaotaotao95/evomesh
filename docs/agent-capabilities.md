@@ -97,7 +97,23 @@ If both limits apply, the call is counted once. Evidence carries the tool's
 capability/source paths when supplied, otherwise context provenance, and never
 copies the output. Predicates should be deterministic and must not raise.
 
-`app.last_run_metrics` is context-local; `app.learning.list()` and `/runs` expose the latest 100 owner runs. Metrics include inference/tool attempts, tool errors, tool output truncations, elapsed duration, context compactions, maximum input characters, configured limits, framework version, configured repo revision and observation IDs. They do not contain task prompts, answers or arguments. The configured repo revision is not a guarantee that installed dependency code equals that commit. Persistence failures log a generic warning and do not make an already-executed action retryable. These are counts/timings, not provider token usage or cost accounting.
+`app.last_run_metrics` is context-local; `app.learning.list()` and `/runs` expose the latest 100 owner runs. Metrics include inference/tool attempts, model/tool errors, tool output truncations, elapsed duration, context compactions, maximum input characters, configured limits, framework version, configured repo revision and observation IDs. They do not contain task prompts, answers or arguments. The configured repo revision is not a guarantee that installed dependency code equals that commit. Persistence failures log a generic warning and do not make an already-executed action retryable. These are counts/timings, not provider token usage or cost accounting.
+
+`model_errors` counts exceptions raised by `Model.complete`, including HTTP,
+transport and response-decoding failures from the built-in adapter. Each emits a
+distinct `model_error` observation with capability `models`, the adapter catalog's
+`src/evomesh/models.py` source hint, exception type and zero-based model step.
+The observation is recorded even when earlier tool/context friction exists, and
+its ID is included in the run metrics. Shared records omit exception text, endpoint,
+credentials, prompts and provider bodies. Proactive reflection uses the same loop
+and classification, so its inference failures also reach the shared SQL ledger.
+
+The exception still fails the run; this adds neither inference retries nor tool
+replay. Earlier tool side effects remain, while failed conversation turns are not
+saved. `RunCancelled` remains cancellation rather than a model error; context
+budget failures before inference remain context observations. These counts measure
+interface failures, not answer quality or correctness. Older persisted runs may
+lack `model_errors`; consumers can default that field to zero.
 
 Reflection submissions include real observation IDs and atomically store proposal/evidence rows. Evidence must exist in the same project. Manual `submit(..., observation_ids=[...])` can also supply links; legacy manual proposals without evidence remain supported. Deduplication retains the first proposal and its original evidence set. Linking an observation demonstrates provenance, not that the proposed patch fixes it.
 

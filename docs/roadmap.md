@@ -100,3 +100,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Bounded UTF-8 stdin for Terminal and execute_code with concurrent pipe I/O, EOF, timeout cleanup and private evolution evidence
 - [x] Idempotent browser checkbox state setting and native radio selection with bounded snapshots and source-linked failures
 - [x] Exclusive new-file creation and snapshot-checked full writes, rejecting special destinations with private source-linked error evidence
+- [x] Distinct model-failure metrics and adapter-source evidence, retained alongside earlier tool/context friction during runs and reflection
