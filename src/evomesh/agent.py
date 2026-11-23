@@ -199,6 +199,8 @@ class Agent:
                                     facts={"source_paths": list(registered.source_paths)},
                                 ),
                             )
+                    except RunCancelled:
+                        raise
                     except Exception as exc:
                         outcome = "error"
                         # Don't put raw arguments, file contents or exception text in the ledger.
@@ -267,6 +269,8 @@ class Agent:
                             ),
                         }
                     )
+            if self.cancelled():
+                raise RunCancelled("Run cancelled after the final tool step")
             self.observe("step_limit", friction_detail("loop", facts={"max_steps": self.max_steps}))
             raise StepLimitExceeded("Agent step limit reached; friction recorded")
         except RunCancelled:

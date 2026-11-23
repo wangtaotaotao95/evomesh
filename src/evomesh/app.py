@@ -396,6 +396,7 @@ class AgentApp:
                 agent
                 and self.config.auto_reflect
                 and agent.last_observations
+                and agent.metrics.get("status") != "cancelled"
                 and not cancelled_now()
                 and not self.config.demo
             ):

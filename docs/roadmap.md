@@ -103,3 +103,4 @@ Use [the capability alignment matrix](alignment.md) to distinguish implemented p
 - [x] Distinct model-failure metrics and adapter-source evidence, retained alongside earlier tool/context friction during runs and reflection
 - [x] Validate complete assistant/tool-call envelopes before batch execution, preventing partial actions from malformed replies and recording model-source evolution evidence
 - [x] Selector-based browser hover for menus/tooltips, with fresh snapshots, normal actionability checks and private source-linked failure evidence
+- [x] Propagate cooperative tool/policy cancellation through SQL tasks without further tool calls, automatic reflection or false error/step-limit evolution evidence

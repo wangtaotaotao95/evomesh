@@ -96,6 +96,23 @@ app.state.schedule("Review notes", interval_seconds=3600)
 
 States: `queued → running → succeeded/failed`; cancellation uses `cancelling → cancelled`; expired running leases become `interrupted`. Cancellation is cooperative between steps; an in-flight model/tool call may finish. Crash recovery deliberately does not replay side effects. Task submission keys are idempotent, but execution and external writes are not globally exactly-once.
 
+Custom tools and `before_tool` hooks can raise `evomesh.agent.RunCancelled` to stop
+the run immediately. This propagates through `AgentApp.run`; task workers persist
+`cancelled`. The loop does not turn this control signal into correctable tool
+feedback, invoke remaining tools in the batch, or make another model call.
+Completed earlier effects remain; a cancelled conversation turn is not saved and
+its session lease is released. Automatic post-run reflection is skipped on
+cancellation even if earlier tools produced friction. Earlier observations remain
+available for a later review. Returning false from `before_tool` still produces
+ordinary `PermissionError` tool feedback; it does not cancel the whole run.
+
+Cancellation observed after the last allowed tool step takes precedence over a
+step-limit failure. Metrics report `cancelled`, without counting cancellation as
+a tool/model error or creating false step-limit evolution evidence. A tool that
+raises the signal has `tool_started` followed by `run_cancelled`, without a
+`tool_completed` event for that attempt. This is cooperative control, not forced
+termination or rollback of an in-flight external action.
+
 The session save and task completion are separate transactions. After a crash, inspect saved history and task events before explicitly retrying an interrupted task. `asyncio` coroutine cancellation does not forcibly terminate the thread used by `arun`; use the task cancellation API for durable work.
 
 ## Independent proactive reviews
